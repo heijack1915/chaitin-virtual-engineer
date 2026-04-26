@@ -31,13 +31,19 @@
 
 ### Mac / Linux 用户
 
-打开终端，输入：
+打开 [ Releases 页面](https://github.com/heijack1915/chaitin-virtual-engineer/releases)，下载对应系统的文件：
+
+| 你的电脑 | 下载这个 |
+|---|---|
+| Mac（Intel 芯片） | `chaitin-ve-mac-amd64` |
+| Mac（M1/M2/M3/M4 芯片） | `chaitin-ve-mac-arm64` |
+| Linux | `chaitin-ve-linux-amd64` |
+
+下载后打开终端，运行两行：
 
 ```bash
-# 给运行权限
-chmod +x chaitin-ve
-# 启动
-./chaitin-ve
+chmod +x chaitin-ve-mac-arm64    # 给运行权限（文件名换成你下载的）
+./chaitin-ve-mac-arm64            # 启动
 ```
 
 然后浏览器打开 `http://localhost:8080` 就能用了。
