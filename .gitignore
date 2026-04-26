@@ -1,0 +1,22 @@
+# Build output
+chaitin-ve
+chaitin-ve.exe
+ve-server
+server
+cve
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Data directory (runtime)
+data/
+
+# Knowledge base zip files
+knowledge/*.zip
