@@ -2,10 +2,12 @@ package main
 
 import (
 	"bytes"
+	"embed"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -25,6 +27,9 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/pkg/sftp"
 )
+
+//go:embed ui
+var uiFS embed.FS
 
 var (
 	port    = flag.Int("port", 8080, "HTTP server port")
@@ -116,10 +121,28 @@ func main() {
 	e.Use(middleware.Recover())
 	e.Use(middleware.CORS())
 
-	uiDir := "ui"
-	e.GET("/", func(c echo.Context) error { return c.File(uiDir + "/index.html") })
-	e.GET("/styles.css", func(c echo.Context) error { return c.File(uiDir + "/styles.css") })
-	e.GET("/app.js", func(c echo.Context) error { return c.File(uiDir + "/app.js") })
+	uiSub, _ := fs.Sub(uiFS, "ui")
+	e.GET("/", func(c echo.Context) error {
+		data, err := fs.ReadFile(uiSub, "index.html")
+		if err != nil {
+			return c.String(404, "Not Found")
+		}
+		return c.HTML(200, string(data))
+	})
+	e.GET("/styles.css", func(c echo.Context) error {
+		data, err := fs.ReadFile(uiSub, "styles.css")
+		if err != nil {
+			return c.String(404, "Not Found")
+		}
+		return c.Blob(200, "text/css", data)
+	})
+	e.GET("/app.js", func(c echo.Context) error {
+		data, err := fs.ReadFile(uiSub, "app.js")
+		if err != nil {
+			return c.String(404, "Not Found")
+		}
+		return c.Blob(200, "application/javascript", data)
+	})
 
 	api := e.Group("/api")
 
