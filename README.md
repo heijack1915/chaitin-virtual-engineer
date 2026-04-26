@@ -8,7 +8,9 @@
 
 ### Windows 用户（推荐）
 
-1. 下载两个文件：`chaitin-ve.exe` 和 `chaitin-ve-launcher.exe`
+1. 打开 [ Releases 页面](https://github.com/heijack1915/chaitin-virtual-engineer/releases)，下载两个文件：
+   - `chaitin-ve.exe`（主程序）
+   - `chaitin-ve-launcher.exe`（启动器）
 2. 把它们放在同一个文件夹里
 3. 双击 `chaitin-ve-launcher.exe`
 4. 等几秒，浏览器会自动打开，就可以用了
