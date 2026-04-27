@@ -676,7 +676,13 @@ func main() {
 				}
 			}
 			if aiText == "" {
-				sseSend(map[string]interface{}{"type": "error", "content": "AI 返回为空，请检查配置"})
+				respJSON, _ := json.Marshal(aiResp)
+				log.Printf("[AI] empty content, raw response: %s", string(respJSON))
+				errMsg := "AI 返回为空，请检查配置"
+				s := string(respJSON)
+				if len(s) > 500 { s = s[:500] + "..." }
+				errMsg += "\nAPI 返回: " + s
+				sseSend(map[string]interface{}{"type": "error", "content": errMsg})
 				return nil
 			}
 
@@ -764,21 +770,51 @@ func callAI(apiURL, apiKey string, req map[string]interface{}, resp *map[string]
 	if strings.HasSuffix(apiURL, "/chat/completions") {
 		apiURL = strings.TrimSuffix(apiURL, "/chat/completions")
 	}
-	httpReq, err := http.NewRequest("POST", apiURL+"/chat/completions", bytes.NewBuffer(body))
-	if err != nil {
-		return fmt.Errorf("failed to build request: %w", err)
+
+	// Try original URL first, if fails and URL doesn't end with /v1, retry with /v1 appended
+	urls := []string{apiURL + "/chat/completions"}
+	if !strings.HasSuffix(apiURL, "/v1") {
+		urls = append(urls, apiURL+"/v1/chat/completions")
 	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
-	httpResp, err := (&http.Client{}).Do(httpReq)
-	if err != nil {
-		return err
+
+	var lastErr error
+	for _, fullURL := range urls {
+		httpReq, err := http.NewRequest("POST", fullURL, bytes.NewBuffer(body))
+		if err != nil {
+			return fmt.Errorf("failed to build request: %w", err)
+		}
+		httpReq.Header.Set("Content-Type", "application/json")
+		httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+		httpResp, err := (&http.Client{Timeout: 120 * time.Second}).Do(httpReq)
+		if err != nil {
+			lastErr = fmt.Errorf("请求失败: %w", err)
+			continue
+		}
+		respBody, _ := io.ReadAll(httpResp.Body)
+		httpResp.Body.Close()
+		log.Printf("[AI] url=%s status=%d body=%s", fullURL, httpResp.StatusCode, string(respBody))
+
+		if httpResp.StatusCode == 200 {
+			json.Unmarshal(respBody, resp)
+			return nil
+		}
+
+		// Non-200: extract error message
+		var errResp map[string]interface{}
+		json.Unmarshal(respBody, &errResp)
+		msg := string(respBody)
+		if errMsg, ok := errResp["error"].(map[string]interface{}); ok {
+			if m, ok := errMsg["message"].(string); ok {
+				msg = m
+			}
+		}
+		lastErr = fmt.Errorf("API 返回 HTTP %d: %s", httpResp.StatusCode, msg)
+		// If got a proper API error (not redirect), don't retry
+		if httpResp.StatusCode >= 400 && httpResp.StatusCode < 500 && httpResp.StatusCode != 404 {
+			return lastErr
+		}
 	}
-	defer httpResp.Body.Close()
-	respBody, _ := io.ReadAll(httpResp.Body)
-	log.Printf("[AI] status=%d body=%s", httpResp.StatusCode, string(respBody))
-	json.Unmarshal(respBody, resp)
-	return nil
+	return lastErr
 }
 
 func getString(m map[string]interface{}, key string) string {
