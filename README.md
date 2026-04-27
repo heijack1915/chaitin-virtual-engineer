@@ -207,6 +207,7 @@ knowledge.zip
 | 知识库 | 版本 | 内容 | 大小 |
 |--------|------|------|------|
 | safeline-knowledge.zip | 25.03.005 | 软件部署手册 + 集群部署实战经验（含证书处理、卸载清理、故障排查） | 19K |
+| safeline-deployment-experience.zip | V1.0 | 实战部署经验：环境检查、容器架构、各模式完整命令、验证/卸载/故障排查 | 5.8K |
 | safeline-user-operation-guide.zip | SL-20-25.03.004 | 用户操作手册完整内容：统计报表、日志分析、安全管理、系统监控、网络部署、系统设置 | 4.8M |
 | safeline-monitoring-snmp-syslog.zip | V1.1 | SNMP OID 完整参考表 + Syslog 所有日志字段定义 + attack_type 枚举（37种攻击类型） | 781K |
 | safeline-hardware-deployment-plans.zip | V1.2 | 硬件 WAF 部署方案（透明桥/镜像旁路/透明代理/反向代理），**以硬件为主** | 8.3M |
