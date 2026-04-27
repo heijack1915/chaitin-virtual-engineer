@@ -1114,6 +1114,9 @@
         sendChatMsg(msg);
     }
 
+    // Track consecutive follow-up messages for auto-expand KB
+    state.chatFollowUpCount = 0;
+
     function sendChatMsg(msg) {
         if (!msg) return;
         appendChat(msg, 'user');
@@ -1125,6 +1128,16 @@
             appendChat('请先在右上角"设置"中配置 AI 接口（API URL 和 API Key）', 'assistant');
             return;
         }
+
+        // Detect if this is a follow-up question
+        const followUpKeywords = ['不对', '不是', '不对吧', '不准确', '找不到', '没找到', '再查查', '详细点', '还有呢', '更多信息'];
+        const isFollowUp = followUpKeywords.some(k => msg.includes(k));
+        if (isFollowUp) {
+            state.chatFollowUpCount++;
+        } else {
+            state.chatFollowUpCount = 0;
+        }
+        const expandKB = state.chatFollowUpCount >= 2;
 
         // Show "thinking" indicator
         const thinkingId = 'thinking-' + Date.now();
@@ -1146,6 +1159,7 @@
                 terminalLines: state.terminalLines,
                 history: state.chatHistory,
                 deployedPkgs: state.deployedPkgs,
+                expandKB: expandKB || undefined,
             }),
         }).then(resp => {
             if (!resp.ok) throw new Error('HTTP ' + resp.status);

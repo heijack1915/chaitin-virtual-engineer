@@ -182,8 +182,126 @@ func (l *Loader) GetWikiContent(kbID string) (*models.WikiContent, error) {
 		return nil, fmt.Errorf("knowledge base not found: %s", kbID)
 	}
 
-	var allContent strings.Builder
+	allContent, err := l.readAllWikiFiles(kb.Path)
+	if err != nil {
+		return nil, err
+	}
+
+	if allContent == "" {
+		return &models.WikiContent{
+			KBID:    kbID,
+			Path:    "wiki/",
+			Title:   kb.Name,
+			Content: "（空知识库）",
+		}, nil
+	}
+
+	return &models.WikiContent{
+		KBID:    kbID,
+		Path:    "wiki/",
+		Title:   kb.Name,
+		Content: allContent,
+	}, nil
+}
+
+// GetWikiIndex returns only file names and first N lines of each file (for large KBs)
+func (l *Loader) GetWikiIndex(kbID string) (*models.WikiContent, error) {
+	l.mu.RLock()
+	kb, ok := l.loadedKBs[kbID]
+	l.mu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("knowledge base not found: %s", kbID)
+	}
+
 	wikiDir := filepath.Join(kb.Path, "wiki")
+	entries, err := os.ReadDir(wikiDir)
+	if err != nil {
+		return nil, err
+	}
+
+	var idx strings.Builder
+	idx.WriteString(fmt.Sprintf("知识库「%s」目录（内容较大，仅显示索引）:\n", kb.Name))
+	for _, f := range entries {
+		if !strings.HasSuffix(f.Name(), ".md") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(wikiDir, f.Name()))
+		if err != nil {
+			continue
+		}
+		idx.WriteString(fmt.Sprintf("\n📄 %s\n", f.Name()))
+		// Show first 5 lines
+		lines := strings.Split(string(data), "\n")
+		for i, line := range lines {
+			if i >= 5 {
+				break
+			}
+			if strings.TrimSpace(line) != "" {
+				idx.WriteString("  " + line + "\n")
+			}
+		}
+		if len(lines) > 5 {
+			idx.WriteString("  ...\n")
+		}
+	}
+
+	return &models.WikiContent{
+		KBID:    kbID,
+		Path:    "wiki/",
+		Title:   kb.Name,
+		Content: idx.String(),
+	}, nil
+}
+
+// GetWikiFile returns the content of a single wiki file
+func (l *Loader) GetWikiFile(kbID, filename string) (string, error) {
+	l.mu.RLock()
+	kb, ok := l.loadedKBs[kbID]
+	l.mu.RUnlock()
+	if !ok {
+		return "", fmt.Errorf("knowledge base not found: %s", kbID)
+	}
+
+	// Try exact filename first, then with .md extension
+	paths := []string{
+		filepath.Join(kb.Path, "wiki", filename),
+		filepath.Join(kb.Path, "wiki", filename+".md"),
+	}
+	for _, p := range paths {
+		data, err := os.ReadFile(p)
+		if err == nil {
+			return string(data), nil
+		}
+	}
+	return "", fmt.Errorf("file not found: %s", filename)
+}
+
+// GetWikiSize returns total size of all wiki files in bytes
+func (l *Loader) GetWikiSize(kbID string) int {
+	l.mu.RLock()
+	kb, ok := l.loadedKBs[kbID]
+	l.mu.RUnlock()
+	if !ok {
+		return 0
+	}
+
+	total := 0
+	wikiDir := filepath.Join(kb.Path, "wiki")
+	entries, _ := os.ReadDir(wikiDir)
+	for _, f := range entries {
+		if strings.HasSuffix(f.Name(), ".md") {
+			info, err := f.Info()
+			if err == nil {
+				total += int(info.Size())
+			}
+		}
+	}
+	return total
+}
+
+func (l *Loader) readAllWikiFiles(kbPath string) (string, error) {
+	var allContent strings.Builder
+	wikiDir := filepath.Join(kbPath, "wiki")
 
 	entries, err := os.ReadDir(wikiDir)
 	if err == nil {
@@ -197,31 +315,7 @@ func (l *Loader) GetWikiContent(kbID string) (*models.WikiContent, error) {
 			}
 		}
 	}
-
-	// Fallback: read sources/ directory listing
-	if allContent.Len() == 0 {
-		sourcesPath := filepath.Join(kb.Path, "sources")
-		sEntries, _ := os.ReadDir(sourcesPath)
-		var mdFiles []string
-		for _, f := range sEntries {
-			if strings.HasSuffix(f.Name(), ".md") {
-				mdFiles = append(mdFiles, f.Name())
-			}
-		}
-		return &models.WikiContent{
-			KBID:    kbID,
-			Path:    "sources/",
-			Title:   kb.Name,
-			Content: fmt.Sprintf("Available documents: %v", mdFiles),
-		}, nil
-	}
-
-	return &models.WikiContent{
-		KBID:    kbID,
-		Path:    "wiki/",
-		Title:   kb.Name,
-		Content: allContent.String(),
-	}, nil
+	return allContent.String(), nil
 }
 
 // Search performs a simple text search in the knowledge base

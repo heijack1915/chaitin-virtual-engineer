@@ -510,6 +510,7 @@ func main() {
 			TerminalLines []string                 `json:"terminalLines"`
 			History       []map[string]string      `json:"history"`
 			DeployedPkgs  []map[string]interface{} `json:"deployedPkgs"`
+		ExpandKB     bool                      `json:"expandKB,omitempty"`
 		}
 		if err := c.Bind(&req); err != nil {
 			return c.JSON(400, map[string]string{"error": err.Error()})
@@ -524,13 +525,36 @@ func main() {
 
 		host := hostManager.GetHost(req.HostID)
 
-		// Knowledge base context
+		// Knowledge base context — hierarchical loading
+		// Small KBs (<50KB): load full content
+		// Large KBs (>=50KB): load index only
+		// AI can use [LOAD: kb-id/file.md] to load specific files
 		kbs := kbLoader.ListKnowledgeBases()
 		kbContext := ""
+		loadedFullKBs := map[string]bool{}
 		for _, kb := range kbs {
-			if wiki, err := kbLoader.GetWikiContent(kb.ID); err == nil {
-				kbContext += "\n\n# " + wiki.Title + "\n" + wiki.Content
+			size := kbLoader.GetWikiSize(kb.ID)
+			expandAll := req.ExpandKB
+			if size < 50*1024 || expandAll {
+				if wiki, err := kbLoader.GetWikiContent(kb.ID); err == nil {
+					kbContext += "\n\n# " + wiki.Title + "\n" + wiki.Content
+					loadedFullKBs[kb.ID] = true
+				}
+			} else {
+				if idx, err := kbLoader.GetWikiIndex(kb.ID); err == nil {
+					kbContext += "\n\n# " + idx.Title + "\n" + idx.Content
+				}
 			}
+		}
+		// Build list of large KBs for [LOAD:] instruction
+		kbIDList := ""
+		for _, kb := range kbs {
+			if !loadedFullKBs[kb.ID] {
+				kbIDList += fmt.Sprintf("\n  - %s: %s", kb.ID, kb.Name)
+			}
+		}
+		if kbIDList != "" {
+			kbContext += "\n\n【按需加载】以下知识库内容较大，仅加载了目录索引。如果你需要详细信息，使用 [LOAD: 知识库ID/文件名] 加载指定文件。可用的知识库：" + kbIDList
 		}
 
 		hostContext := ""
@@ -647,6 +671,7 @@ func main() {
 			c.Response().Flush()
 		}
 
+
 		// Agentic loop: no artificial round limit — AI decides when to stop
 		for round := 0; ; round++ {
 			aiReq := map[string]interface{}{
@@ -684,6 +709,45 @@ func main() {
 				errMsg += "\nAPI 返回: " + s
 				sseSend(map[string]interface{}{"type": "error", "content": errMsg})
 				return nil
+			}
+
+			// Check if AI wants to load a knowledge base file
+			loadTarget := ""
+			if idx := strings.Index(aiText, "[LOAD:"); idx >= 0 {
+				end := strings.Index(aiText[idx:], "]")
+				if end > 0 {
+					loadTarget = strings.TrimSpace(aiText[idx+6 : idx+end])
+				}
+			}
+			if loadTarget != "" {
+				sseSend(map[string]interface{}{"type": "turn", "role": "assistant", "content": aiText})
+				// Parse "kb-id/filename.md"
+				parts := strings.SplitN(loadTarget, "/", 2)
+				var loadResult string
+				if len(parts) == 2 {
+					fileContent, err := kbLoader.GetWikiFile(parts[0], parts[1])
+					if err != nil {
+						loadResult = fmt.Sprintf("加载失败: %s", err.Error())
+					} else {
+						loadResult = fmt.Sprintf("文件 %s/%s 已加载（%d 字符）:\n\n%s", parts[0], parts[1], len(fileContent), fileContent)
+						loadedFullKBs[parts[0]] = true
+					}
+				} else {
+					// Load entire KB
+					kbID := loadTarget
+					if wiki, err := kbLoader.GetWikiContent(kbID); err == nil {
+						loadResult = fmt.Sprintf("知识库 %s 已完整加载（%d 字符）:\n\n%s", kbID, len(wiki.Content), wiki.Content)
+						loadedFullKBs[kbID] = true
+					} else {
+						loadResult = fmt.Sprintf("加载失败: %s", err.Error())
+					}
+				}
+				sseSend(map[string]interface{}{"type": "turn", "role": "tool_result", "content": loadResult})
+				messages = append(messages,
+					map[string]string{"role": "assistant", "content": aiText},
+					map[string]string{"role": "user", "content": loadResult + "\n请根据以上内容继续回答。"},
+				)
+				continue
 			}
 
 			// Check if AI wants to execute a command
