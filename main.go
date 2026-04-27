@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -580,16 +581,19 @@ func main() {
 
 		systemPrompt := `你是长亭虚拟工程师，专门帮助用户在远程 Linux 主机上安装、配置和排查长亭科技产品（SafeLine WAF、牧云CloudWalker、洞鉴X-Ray、谛听D-Sensor）。
 
-你有能力直接在目标主机上执行命令。当需要执行命令时，使用以下格式（每次只发一条）：
-[EXEC: 命令内容]
+你有能力直接在目标主机上执行命令。
 
-系统会自动执行该命令并把输出返回给你，你再根据输出决定下一步。
-当任务全部完成或不需要再执行命令时，直接用自然语言回复用户即可，不要再输出 [EXEC:...] 格式。
+【命令执行机制 - 严格遵守】
+当你需要在远程主机上执行命令时，你的回复中必须包含且仅包含一行 [EXEC: 命令内容]，不要附带任何其他文字。
+系统会自动执行该命令并把真实输出返回给你，你再根据真实输出来判断下一步。
+当任务全部完成或只需要回复用户时，用自然语言回复，不要输出 [EXEC:...]。
 
-执行规则：
-- 每次只输出一条 [EXEC:...] 命令，等待结果后再决定下一步
-- 输出 [EXEC:...] 时不要附带其他解释，执行完再解释
-- 如果命令执行失败，分析原因并尝试修复
+重要规则（违反这些规则会导致严重后果）：
+1. 你绝对不能编造、猜测、假设命令的执行结果。你只能基于系统返回给你的真实输出进行回复。
+2. 在收到命令执行结果之前，你不知道命令的输出是什么。不要说"回显如下"然后编造内容。
+3. 每次只输出一条 [EXEC:...] 命令，等待结果后再决定下一步。
+4. [EXEC:...] 命令必须单独占一行，格式为 [EXEC: 具体命令]，不要用 markdown 代码块包裹。
+5. 如果用户质疑你的输出，说明你可能编造了结果，立即重新执行命令获取真实输出。
 
 知识库优先原则（最高优先级，必须严格遵守）：
 - 下方「内置知识库」包含了经过真实环境验证的完整部署/卸载/升级/故障排查经验
@@ -677,11 +681,26 @@ func main() {
 			}
 
 			// Check if AI wants to execute a command
+			// Support formats: [EXEC: cmd], ```bash\ncmd\n```, `cmd`
 			execCmd := ""
 			if idx := strings.Index(aiText, "[EXEC:"); idx >= 0 {
 				end := strings.Index(aiText[idx:], "]")
 				if end > 0 {
 					execCmd = strings.TrimSpace(aiText[idx+6 : idx+end])
+				}
+			}
+			if execCmd == "" {
+				// Try markdown code block: ```bash ... ``` or ``` ... ```
+				for _, re := range []*regexp.Regexp{
+					regexp.MustCompile("(?s)```(?:bash|sh)?\\s*\\n([^\n].*?)\\n```"),
+				} {
+					if m := re.FindStringSubmatch(aiText); len(m) > 1 {
+						candidate := strings.TrimSpace(m[1])
+						if candidate != "" && !strings.Contains(candidate, "请") {
+							execCmd = candidate
+							break
+						}
+					}
 				}
 			}
 
@@ -722,10 +741,10 @@ func main() {
 			toolResult := fmt.Sprintf("命令: %s\n\n输出:\n%s", execCmd, cmdOutput)
 			sseSend(map[string]interface{}{"type": "turn", "role": "tool_result", "content": toolResult})
 
-			// Feed result back to AI
+			// Feed result back to AI — emphasize this is real output
 			messages = append(messages,
 				map[string]string{"role": "assistant", "content": aiText},
-				map[string]string{"role": "user", "content": "命令执行结果：\n```\n" + cmdOutput + "\n```\n请继续。"},
+				map[string]string{"role": "user", "content": "[这是系统返回的真实命令执行结果，你必须基于此结果回复]\n命令: " + execCmd + "\n输出:\n" + cmdOutput + "\n请根据以上真实结果继续操作。"},
 			)
 		}
 
