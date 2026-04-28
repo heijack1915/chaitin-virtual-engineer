@@ -790,3 +790,163 @@ body {
     font-size: 0.75rem;
     color: var(--text-muted);
 }
+
+/* ── SafeLine WAF Management ───────────────────────────────────────────── */
+.sl-config-bar { padding: 12px 20px; }
+.sl-config-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.form-inline {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.form-inline label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    white-space: nowrap;
+}
+.sl-config-status {
+    font-size: 0.82rem;
+    padding: 2px 10px;
+    border-radius: 12px;
+    white-space: nowrap;
+}
+.sl-status-ok { background: #dcfce7; color: #166534; }
+.sl-status-error { background: #fee2e2; color: #991b1b; }
+
+.sl-subtabs {
+    display: flex;
+    gap: 4px;
+    background: var(--surface);
+    padding: 4px;
+    border-radius: 10px;
+    margin-bottom: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+.sl-subtab {
+    padding: 10px 20px;
+    border: none;
+    background: transparent;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    transition: all 0.2s;
+}
+.sl-subtab:hover { background: var(--bg); }
+.sl-subtab.active { background: var(--primary); color: white; }
+
+.sl-panel { display: none; }
+.sl-panel.active { display: block; }
+
+.sl-overview-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 16px;
+}
+.sl-stat-card {
+    background: var(--bg);
+    border-radius: 8px;
+    padding: 20px 16px;
+    text-align: center;
+    border: 1px solid var(--border);
+}
+.sl-stat-value { font-size: 1.8rem; font-weight: 700; }
+.sl-stat-label { font-size: 0.82rem; color: var(--text-muted); margin-top: 4px; }
+
+.sl-type-grid { display: flex; flex-direction: column; gap: 8px; }
+.sl-type-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.82rem;
+}
+.sl-type-name { width: 180px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sl-type-bar-wrap { flex: 1; height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
+.sl-type-bar { height: 100%; background: var(--danger); border-radius: 4px; transition: width 0.3s; }
+.sl-type-count { width: 70px; text-align: right; font-family: monospace; color: var(--text-muted); }
+
+.sl-table-wrap { overflow-x: auto; }
+.sl-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+}
+.sl-table th {
+    text-align: left;
+    padding: 10px 12px;
+    background: var(--bg);
+    border-bottom: 2px solid var(--border);
+    font-weight: 600;
+    font-size: 0.82rem;
+    white-space: nowrap;
+}
+.sl-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+}
+.sl-table tr:hover { background: #f8fafc; }
+
+.sl-badge {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+.sl-badge-ok { background: #dcfce7; color: #166534; }
+.sl-badge-off { background: #fee2e2; color: #991b1b; }
+.sl-badge-block { background: #fee2e2; color: #991b1b; }
+.sl-badge-warn { background: #fef3c7; color: #92400e; }
+
+.sl-actions-cell { white-space: nowrap; }
+.btn-sm { padding: 4px 10px; font-size: 0.78rem; }
+
+.sl-filter-input {
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 0.875rem;
+}
+.sl-filter-input:focus { outline: none; border-color: var(--primary); }
+
+.sl-pagination {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 0 0;
+}
+.sl-page-info { font-size: 0.82rem; color: var(--text-muted); }
+.sl-page-btns { display: flex; gap: 6px; align-items: center; }
+.sl-page-cur { font-size: 0.82rem; padding: 0 8px; }
+
+.sl-info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 16px;
+}
+.sl-info-block {
+    background: var(--bg);
+    border-radius: 8px;
+    padding: 16px;
+    border: 1px solid var(--border);
+}
+.sl-info-block h3 { font-size: 0.95rem; margin-bottom: 12px; }
+.sl-info-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.85rem;
+}
+.sl-info-row:last-child { border-bottom: none; }
+.sl-info-row span:first-child { color: var(--text-muted); }
+.sl-info-row span:last-child { font-weight: 500; }
+
+.sl-log-table td { font-size: 0.8rem; }

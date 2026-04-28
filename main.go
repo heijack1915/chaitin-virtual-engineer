@@ -22,6 +22,7 @@ import (
 
 	"github.com/chaitin/chaitin-virtual-engineer/core/executor"
 	"github.com/chaitin/chaitin-virtual-engineer/core/knowledge"
+	"github.com/chaitin/chaitin-virtual-engineer/core/safeline"
 	"github.com/chaitin/chaitin-virtual-engineer/core/ssh"
 	"github.com/chaitin/chaitin-virtual-engineer/models"
 	"github.com/labstack/echo/v4"
@@ -500,6 +501,227 @@ func main() {
 		})
 		return nil
 	})
+
+
+		// ── SafeLine WAF Management ─────────────────────────────────────────────
+		safelineConfigPath := filepath.Join(*dataDir, "safeline_config.json")
+		loadSafelineConfig := func() map[string]string {
+			data, err := os.ReadFile(safelineConfigPath)
+			if err != nil {
+				return map[string]string{}
+			}
+			var cfg map[string]string
+			json.Unmarshal(data, &cfg)
+			return cfg
+		}
+		saveSafelineConfig := func(cfg map[string]string) {
+			data, _ := json.MarshalIndent(cfg, "", "  ")
+			os.WriteFile(safelineConfigPath, data, 0644)
+		}
+		getSafeLineClient := func(c echo.Context) *safeline.Client {
+			cfg := loadSafelineConfig()
+			url := cfg["url"]
+			token := cfg["token"]
+			if url == "" || token == "" {
+				return nil
+			}
+			return safeline.NewClient(url, token)
+		}
+
+		api.GET("/safeline/config", func(c echo.Context) error {
+			return c.JSON(200, loadSafelineConfig())
+		})
+		api.POST("/safeline/config", func(c echo.Context) error {
+			var cfg map[string]string
+			if err := c.Bind(&cfg); err != nil {
+				return c.JSON(400, map[string]string{"error": err.Error()})
+			}
+			client := safeline.NewClient(cfg["url"], cfg["token"])
+			resp, err := client.TestConnection()
+			if err != nil {
+				return c.JSON(400, map[string]string{"error": "连接失败: " + err.Error()})
+			}
+			if resp.Err != nil {
+				return c.JSON(400, map[string]string{"error": fmt.Sprintf("认证失败: %v", resp.Err)})
+			}
+			saveSafelineConfig(cfg)
+			return c.JSON(200, map[string]string{"status": "ok"})
+		})
+		api.POST("/safeline/test", func(c echo.Context) error {
+			client := getSafeLineClient(c)
+			if client == nil {
+				return c.JSON(400, map[string]string{"error": "请先配置雷池 API 连接"})
+			}
+			resp, err := client.TestConnection()
+			if err != nil {
+				return c.JSON(400, map[string]string{"error": err.Error()})
+			}
+			return c.JSON(200, resp)
+		})
+		api.GET("/safeline/system", func(c echo.Context) error {
+			client := getSafeLineClient(c)
+			if client == nil { return c.JSON(400, map[string]string{"error": "未配置"}) }
+			info, _ := client.GetSystemInfo()
+			return c.JSON(200, info)
+		})
+		api.GET("/safeline/overview", func(c echo.Context) error {
+			client := getSafeLineClient(c)
+			if client == nil { return c.JSON(400, map[string]string{"error": "未配置"}) }
+			duration := c.QueryParam("duration")
+			if duration == "" { duration = "h" }
+			params := map[string]string{}
+			for _, k := range []string{"total", "host", "src_ip", "attack_type", "risk_level", "request_number", "location"} {
+				if v := c.QueryParam(k); v != "" { params[k] = v }
+			}
+			resp, err := client.GetOverview(duration, params)
+			if err != nil { return c.JSON(400, map[string]string{"error": err.Error()}) }
+			return c.JSON(200, resp)
+		})
+		api.GET("/safeline/nodes", func(c echo.Context) error {
+			client := getSafeLineClient(c)
+			if client == nil { return c.JSON(400, map[string]string{"error": "未配置"}) }
+			resp, err := client.GetNodeInfo()
+			if err != nil { return c.JSON(400, map[string]string{"error": err.Error()}) }
+			return c.JSON(200, resp)
+		})
+		api.GET("/safeline/websites", func(c echo.Context) error {
+			client := getSafeLineClient(c)
+			if client == nil { return c.JSON(400, map[string]string{"error": "未配置"}) }
+			mode := c.QueryParam("mode")
+			if mode == "" { mode = "SoftwareReverseProxy" }
+			resp, err := client.GetWebsites(mode)
+			if err != nil { return c.JSON(400, map[string]string{"error": err.Error()}) }
+			return c.JSON(200, resp)
+		})
+		api.POST("/safeline/websites", func(c echo.Context) error {
+			client := getSafeLineClient(c)
+			if client == nil { return c.JSON(400, map[string]string{"error": "未配置"}) }
+			var body map[string]interface{}
+			if err := c.Bind(&body); err != nil { return c.JSON(400, map[string]string{"error": err.Error()}) }
+			resp, err := client.CreateWebsite(getString(body, "mode"), body)
+			if err != nil { return c.JSON(400, map[string]string{"error": err.Error()}) }
+			return c.JSON(200, resp)
+		})
+		api.PUT("/safeline/websites", func(c echo.Context) error {
+			client := getSafeLineClient(c)
+			if client == nil { return c.JSON(400, map[string]string{"error": "未配置"}) }
+			var body map[string]interface{}
+			if err := c.Bind(&body); err != nil { return c.JSON(400, map[string]string{"error": err.Error()}) }
+			mode := getString(body, "mode")
+			site := body
+			delete(site, "mode")
+			resp, err := client.UpdateWebsite(mode, site)
+			if err != nil { return c.JSON(400, map[string]string{"error": err.Error()}) }
+			return c.JSON(200, resp)
+		})
+		api.DELETE("/safeline/websites/:id", func(c echo.Context) error {
+			client := getSafeLineClient(c)
+			if client == nil { return c.JSON(400, map[string]string{"error": "未配置"}) }
+			id, _ := strconv.Atoi(c.Param("id"))
+			mode := c.QueryParam("mode")
+			if mode == "" { mode = "SoftwareReverseProxy" }
+			resp, err := client.DeleteWebsite(mode, id)
+			if err != nil { return c.JSON(400, map[string]string{"error": err.Error()}) }
+			return c.JSON(200, resp)
+		})
+		api.PUT("/safeline/websites/:id/toggle", func(c echo.Context) error {
+			client := getSafeLineClient(c)
+			if client == nil { return c.JSON(400, map[string]string{"error": "未配置"}) }
+			id, _ := strconv.Atoi(c.Param("id"))
+			var body struct{ Enabled bool `json:"enabled"` }
+			if err := c.Bind(&body); err != nil { return c.JSON(400, map[string]string{"error": err.Error()}) }
+			resp, err := client.ToggleWebsite(id, body.Enabled)
+			if err != nil { return c.JSON(400, map[string]string{"error": err.Error()}) }
+			return c.JSON(200, resp)
+		})
+		api.GET("/safeline/policies", func(c echo.Context) error {
+			client := getSafeLineClient(c)
+			if client == nil { return c.JSON(400, map[string]string{"error": "未配置"}) }
+			resp, err := client.GetPolicyGroups()
+			if err != nil { return c.JSON(400, map[string]string{"error": err.Error()}) }
+			return c.JSON(200, resp)
+		})
+		api.GET("/safeline/certs", func(c echo.Context) error {
+			client := getSafeLineClient(c)
+			if client == nil { return c.JSON(400, map[string]string{"error": "未配置"}) }
+			resp, err := client.GetCerts()
+			if err != nil { return c.JSON(400, map[string]string{"error": err.Error()}) }
+			return c.JSON(200, resp)
+		})
+		api.GET("/safeline/ip-groups", func(c echo.Context) error {
+			client := getSafeLineClient(c)
+			if client == nil { return c.JSON(400, map[string]string{"error": "未配置"}) }
+			resp, err := client.GetIPGroups()
+			if err != nil { return c.JSON(400, map[string]string{"error": err.Error()}) }
+			return c.JSON(200, resp)
+		})
+		api.POST("/safeline/ip-groups", func(c echo.Context) error {
+			client := getSafeLineClient(c)
+			if client == nil { return c.JSON(400, map[string]string{"error": "未配置"}) }
+			var body map[string]interface{}
+			if err := c.Bind(&body); err != nil { return c.JSON(400, map[string]string{"error": err.Error()}) }
+			resp, err := client.CreateIPGroup(body)
+			if err != nil { return c.JSON(400, map[string]string{"error": err.Error()}) }
+			return c.JSON(200, resp)
+		})
+		api.DELETE("/safeline/ip-groups/:id", func(c echo.Context) error {
+			client := getSafeLineClient(c)
+			if client == nil { return c.JSON(400, map[string]string{"error": "未配置"}) }
+			id, _ := strconv.Atoi(c.Param("id"))
+			resp, err := client.DeleteIPGroup(id)
+			if err != nil { return c.JSON(400, map[string]string{"error": err.Error()}) }
+			return c.JSON(200, resp)
+		})
+		api.GET("/safeline/logs", func(c echo.Context) error {
+			client := getSafeLineClient(c)
+			if client == nil { return c.JSON(400, map[string]string{"error": "未配置"}) }
+			scope := c.QueryParam("scope")
+			if scope == "" { scope = "log:detect_log" }
+			count, _ := strconv.Atoi(c.QueryParam("count"))
+			if count <= 0 { count = 20 }
+			offset, _ := strconv.Atoi(c.QueryParam("offset"))
+			filter := c.QueryParam("q")
+			resp, err := client.GetAttackLogs(scope, filter, count, offset)
+			if err != nil { return c.JSON(400, map[string]string{"error": err.Error()}) }
+			return c.JSON(200, resp)
+		})
+		api.GET("/safeline/es-indices", func(c echo.Context) error {
+			client := getSafeLineClient(c)
+			if client == nil { return c.JSON(400, map[string]string{"error": "未配置"}) }
+			alias := c.QueryParam("alias")
+			if alias == "" { alias = "detect_log" }
+			resp, err := client.GetESIndices(alias)
+			if err != nil { return c.JSON(400, map[string]string{"error": err.Error()}) }
+			return c.JSON(200, resp)
+		})
+		api.GET("/safeline/license", func(c echo.Context) error {
+			client := getSafeLineClient(c)
+			if client == nil { return c.JSON(400, map[string]string{"error": "未配置"}) }
+			resp, err := client.GetLicense()
+			if err != nil { return c.JSON(400, map[string]string{"error": err.Error()}) }
+			return c.JSON(200, resp)
+		})
+		api.GET("/safeline/detector", func(c echo.Context) error {
+			client := getSafeLineClient(c)
+			if client == nil { return c.JSON(400, map[string]string{"error": "未配置"}) }
+			resp, err := client.GetDetectorState()
+			if err != nil { return c.JSON(400, map[string]string{"error": err.Error()}) }
+			return c.JSON(200, resp)
+		})
+		api.GET("/safeline/acl", func(c echo.Context) error {
+			client := getSafeLineClient(c)
+			if client == nil { return c.JSON(400, map[string]string{"error": "未配置"}) }
+			resp, err := client.GetACLRuleTemplates()
+			if err != nil { return c.JSON(400, map[string]string{"error": err.Error()}) }
+			return c.JSON(200, resp)
+		})
+		api.GET("/safeline/traffic-learning", func(c echo.Context) error {
+			client := getSafeLineClient(c)
+			if client == nil { return c.JSON(400, map[string]string{"error": "未配置"}) }
+			resp, err := client.GetTrafficLearningOverview()
+			if err != nil { return c.JSON(400, map[string]string{"error": err.Error()}) }
+			return c.JSON(200, resp)
+		})
 
 	// ── AI Agent Chat (multi-turn with auto-execution) ─────────────────────
 	// POST /api/chat → SSE stream: pushes each turn as it happens

@@ -27,8 +27,10 @@
         bindKnowledge();
         bindChat();
         bindSettings();
+        bindSafeLine();
         loadSettings();
         loadHosts();
+        loadSafeLineConfig();
     });
 
     // ── navigation ────────────────────────────────────────────────────────
@@ -1354,5 +1356,398 @@
         document.body.appendChild(t);
         setTimeout(() => t.classList.add('show'), 10);
         setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, 3000);
+    }
+
+    // ── SafeLine WAF Management ────────────────────────────────────────────
+    const SL = API + '/safeline';
+    const slState = { logOffset: 0, logCount: 20, configLoaded: false };
+
+    function bindSafeLine() {
+        // Config
+        document.getElementById('slTestBtn').addEventListener('click', () => {
+            const url = document.getElementById('slUrl').value.trim();
+            const token = document.getElementById('slToken').value.trim();
+            if (!url || !token) { showToast('请填写 API 地址和 Token', 'error'); return; }
+            document.getElementById('slConfigStatus').textContent = '测试中...';
+            document.getElementById('slConfigStatus').className = 'sl-config-status';
+            fetch(SL + '/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url, token }) })
+                .then(r => r.json()).then(d => {
+                    if (d.err) { document.getElementById('slConfigStatus').textContent = '失败: ' + JSON.stringify(d.err); document.getElementById('slConfigStatus').className = 'sl-config-status sl-status-error'; return; }
+                    if (d.error) { document.getElementById('slConfigStatus').textContent = '失败: ' + d.error; document.getElementById('slConfigStatus').className = 'sl-config-status sl-status-error'; return; }
+                    document.getElementById('slConfigStatus').textContent = '连接成功';
+                    document.getElementById('slConfigStatus').className = 'sl-config-status sl-status-ok';
+                }).catch(e => { document.getElementById('slConfigStatus').textContent = '请求失败: ' + e.message; document.getElementById('slConfigStatus').className = 'sl-config-status sl-status-error'; });
+        });
+        document.getElementById('slSaveBtn').addEventListener('click', () => {
+            const url = document.getElementById('slUrl').value.trim();
+            const token = document.getElementById('slToken').value.trim();
+            if (!url || !token) { showToast('请填写 API 地址和 Token', 'error'); return; }
+            document.getElementById('slConfigStatus').textContent = '保存中...';
+            document.getElementById('slConfigStatus').className = 'sl-config-status';
+            fetch(SL + '/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url, token }) })
+                .then(r => r.json()).then(d => {
+                    if (d.error) { document.getElementById('slConfigStatus').textContent = '失败: ' + d.error; document.getElementById('slConfigStatus').className = 'sl-config-status sl-status-error'; return; }
+                    document.getElementById('slConfigStatus').textContent = '配置已保存';
+                    document.getElementById('slConfigStatus').className = 'sl-config-status sl-status-ok';
+                    showToast('雷池 API 配置已保存', 'success');
+                }).catch(e => { document.getElementById('slConfigStatus').textContent = '请求失败'; document.getElementById('slConfigStatus').className = 'sl-config-status sl-status-error'; });
+        });
+
+        // Sub-tabs
+        document.querySelectorAll('.sl-subtab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.sl-subtab').forEach(t => t.classList.toggle('active', t.dataset.slTab === tab.dataset.slTab));
+                document.querySelectorAll('.sl-panel').forEach(p => p.classList.toggle('active', p.id === tab.dataset.slTab));
+            });
+        });
+
+        // Overview
+        document.getElementById('slRefreshOverview').addEventListener('click', loadSLOverview);
+        document.getElementById('slDuration').addEventListener('change', loadSLOverview);
+
+        // Websites
+        document.getElementById('slRefreshWebsites').addEventListener('click', loadSLWebsites);
+        document.getElementById('slAddWebsite').addEventListener('click', () => {
+            document.getElementById('slWebsiteForm').reset();
+            document.getElementById('slWebsiteModalTitle').textContent = '新建站点';
+            document.getElementById('slPolicySelect').innerHTML = '<option value="3">引擎防护配置默认模板</option><option value="null">不使用防护策略</option>';
+            loadSLPolicies();
+            document.getElementById('slWebsiteModal').classList.add('active');
+        });
+        document.getElementById('slWebHealthCheck').addEventListener('change', function() {
+            document.getElementById('slWebHealthOpts').style.display = this.checked ? 'block' : 'none';
+        });
+        document.getElementById('slWebsiteForm').addEventListener('submit', e => {
+            e.preventDefault();
+            createSLWebsite(new FormData(e.target));
+        });
+
+        // IP Groups
+        document.getElementById('slRefreshIPGroups').addEventListener('click', loadSLIPGroups);
+        document.getElementById('slAddIPGroup').addEventListener('click', () => {
+            document.getElementById('slIPGroupForm').reset();
+            document.getElementById('slIPGroupModal').classList.add('active');
+        });
+        document.getElementById('slIPGroupForm').addEventListener('submit', e => {
+            e.preventDefault();
+            createSLIPGroup(new FormData(e.target));
+        });
+
+        // Logs
+        document.getElementById('slRefreshLogs').addEventListener('click', () => { slState.logOffset = 0; loadSLLogs(); });
+        document.getElementById('slLogFilter').addEventListener('keydown', e => { if (e.key === 'Enter') { slState.logOffset = 0; loadSLLogs(); } });
+
+        // System
+        document.getElementById('slRefreshSystem').addEventListener('click', loadSLSystem);
+    }
+
+    function loadSafeLineConfig() {
+        fetch(SL + '/config').then(r => r.json()).then(cfg => {
+            if (cfg.url) document.getElementById('slUrl').value = cfg.url;
+            if (cfg.token) document.getElementById('slToken').value = cfg.token;
+            if (cfg.url && cfg.token) {
+                document.getElementById('slConfigStatus').textContent = '已配置';
+                document.getElementById('slConfigStatus').className = 'sl-config-status sl-status-ok';
+            }
+        });
+    }
+
+    function slFetch(path, opts) {
+        return fetch(SL + path, opts).then(r => r.json()).then(d => {
+            if (d.error) throw new Error(d.error);
+            return d;
+        });
+    }
+
+    // ── Overview ──
+    function loadSLOverview() {
+        const duration = document.getElementById('slDuration').value;
+        const el = document.getElementById('slOverviewCards');
+        el.innerHTML = '<div class="empty-state">加载中...</div>';
+        slFetch('/overview?duration=' + duration).then(data => {
+            const d = data.data || {};
+            const cards = [
+                { label: '总请求数', value: fmtNum(d.total_number || 0), color: 'var(--primary)' },
+                { label: '攻击次数', value: fmtNum(d.attack_number || 0), color: 'var(--danger)' },
+                { label: '拦截次数', value: fmtNum(d.blocked_number || 0), color: '#f59e0b' },
+                { label: '拦截率', value: d.total_number ? ((d.blocked_number / d.total_number) * 100).toFixed(2) + '%' : '0%', color: 'var(--success)' },
+            ];
+            el.innerHTML = cards.map(c => `
+                <div class="sl-stat-card">
+                    <div class="sl-stat-value" style="color:${c.color}">${c.value}</div>
+                    <div class="sl-stat-label">${c.label}</div>
+                </div>`).join('');
+
+            // Attack type breakdown
+            const extra = document.getElementById('slOverviewExtra');
+            const types = d.attack_type || {};
+            if (Object.keys(types).length > 0) {
+                const sorted = Object.entries(types).sort((a, b) => b[1] - a[1]).slice(0, 10);
+                extra.innerHTML = '<h3 style="font-size:0.95rem;margin-bottom:10px">攻击类型 TOP 10</h3><div class="sl-type-grid">' +
+                    sorted.map(([name, count]) => `
+                        <div class="sl-type-row">
+                            <span class="sl-type-name">${esc(name)}</span>
+                            <div class="sl-type-bar-wrap"><div class="sl-type-bar" style="width:${(count / sorted[0][1]) * 100}%"></div></div>
+                            <span class="sl-type-count">${fmtNum(count)}</span>
+                        </div>`).join('') + '</div>';
+            } else {
+                extra.innerHTML = '';
+            }
+        }).catch(e => { el.innerHTML = '<div class="empty-state">加载失败: ' + esc(e.message) + '</div>'; });
+    }
+
+    // ── Websites ──
+    function loadSLWebsites() {
+        const mode = document.getElementById('slWebMode').value;
+        const el = document.getElementById('slWebsiteList');
+        el.innerHTML = '<div class="empty-state">加载中...</div>';
+        slFetch('/websites?mode=' + mode).then(data => {
+            const items = data.data || [];
+            if (!items.length) { el.innerHTML = '<div class="empty-state">暂无站点</div>'; return; }
+            el.innerHTML = '<table class="sl-table"><thead><tr><th>站点名称</th><th>域名</th><th>后端</th><th>状态</th><th>防护策略</th><th>操作</th></tr></thead><tbody>' +
+                items.map(w => {
+                    const domains = (w.server_names || []).join(', ');
+                    const servers = (w.backend_config?.servers || []).map(s => s.host + ':' + s.port).join(', ');
+                    return `
+                    <tr>
+                        <td><strong>${esc(w.name)}</strong></td>
+                        <td>${esc(domains || '-')}</td>
+                        <td>${esc(servers || '-')}</td>
+                        <td><span class="sl-badge ${w.is_enabled ? 'sl-badge-ok' : 'sl-badge-off'}">${w.is_enabled ? '启用' : '禁用'}</span></td>
+                        <td>${w.policy_group ? esc(w.policy_group.name || '-') : '<span class="sl-badge sl-badge-off">无</span>'}</td>
+                        <td class="sl-actions-cell">
+                            <button class="btn btn-secondary btn-sm" onclick="window._slToggleWeb(${w.id},${!w.is_enabled})">${w.is_enabled ? '禁用' : '启用'}</button>
+                            <button class="btn btn-danger btn-sm" onclick="window._slDeleteWeb(${w.id},'${mode}')">删除</button>
+                        </td>
+                    </tr>`;}).join('') + '</tbody></table>';
+        }).catch(e => { el.innerHTML = '<div class="empty-state">加载失败: ' + esc(e.message) + '</div>'; });
+    }
+
+    function loadSLPolicies() {
+        slFetch('/policies').then(data => {
+            const items = data.data || [];
+            const sel = document.getElementById('slPolicySelect');
+            sel.innerHTML = items.map(p => `<option value="${p.id}">${esc(p.name || p.id)}</option>`).join('') +
+                '<option value="null">不使用防护策略</option>';
+        }).catch(() => {});
+    }
+
+    function createSLWebsite(fd) {
+        const domain = fd.get('domain');
+        const upstream = fd.get('upstream');
+        const policyGroupId = fd.get('policy_group');
+        const mode = fd.get('mode');
+        const hcEnabled = document.getElementById('slWebHealthCheck').checked;
+        const [upstreamHost, upstreamPortStr] = upstream.split(':');
+        const upstreamPort = parseInt(upstreamPortStr) || 80;
+
+        const body = {
+            mode,
+            name: domain,
+            server_names: [domain],
+            ip: ["0.0.0.0", "::"],
+            interface: "virtual",
+            ports: [{ port: 80, ssl: false, http2: false, sni: false, is_double_cert: false }],
+            addrs: [{ port: 80, ssl: false }],
+            backend_config: {
+                type: "proxy",
+                load_balance_policy: "Round Robin",
+                x_forwarded_for_action: "append",
+                servers: [{ host: upstreamHost, port: upstreamPort, protocol: "http", weight: 1, is_enabled: true }],
+                health_check_config: {
+                    is_enabled: hcEnabled,
+                    check_type: hcEnabled ? (fd.get('hc_protocol') || 'http') : "http",
+                    host: hcEnabled ? (fd.get('hc_host') || upstreamHost) : upstreamHost,
+                    port: hcEnabled ? (parseInt(fd.get('hc_port')) || upstreamPort) : upstreamPort,
+                    path: "/",
+                    method: "GET",
+                    interval: 10000,
+                    timeout: 5000,
+                    fall: 3,
+                    rise: 2,
+                    check_http_expect_alive: ["http_2xx", "http_3xx"],
+                },
+            },
+            session_method: { type: "off" },
+            advanced_cache: false,
+            ignore_cert: false,
+            ntlm_enabled: false,
+            url_paths: [{ op: "pre", url_path: "/" }],
+            detector_ip_source: ["Socket"],
+            detector_ip_source_from: "local",
+            access_log: { is_enabled: true, log_option: "Non-Persistence", req_body: true, rsp_body: false, log_request_header: false, log_response_header: false },
+            proxy_bind_config: { enable: false, hash_select_ip_method: "remote_addr_and_port", proxy_ip_list: null },
+            selected_tengine: { tengine_list: null, type: "all" },
+            asset_group: 1,
+            ssl_cert: null,
+            ssl_ciphers: "",
+            ssl_gm_cert: null,
+            ssl_protocols: [],
+            remark: "",
+        };
+        body.policy_group = policyGroupId === 'null' ? null : parseInt(policyGroupId);
+
+        fetch(SL + '/websites', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+            .then(r => r.json()).then(d => {
+                if (d.error) { showToast('创建失败: ' + d.error, 'error'); return; }
+                if (d.err) { showToast('创建失败: ' + JSON.stringify(d.err), 'error'); return; }
+                showToast('站点创建成功', 'success');
+                document.getElementById('slWebsiteModal').classList.remove('active');
+                loadSLWebsites();
+            }).catch(e => showToast('创建失败: ' + e.message, 'error'));
+    }
+
+    window._slToggleWeb = function(id, enabled) {
+        fetch(SL + '/websites/' + id + '/toggle', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }) })
+            .then(r => r.json()).then(d => {
+                if (d.err) { showToast('操作失败: ' + JSON.stringify(d.err), 'error'); return; }
+                showToast(enabled ? '已启用' : '已禁用', 'success');
+                loadSLWebsites();
+            });
+    };
+
+    window._slDeleteWeb = function(id, mode) {
+        if (!confirm('确定删除该站点？')) return;
+        fetch(SL + '/websites/' + id + '?mode=' + mode, { method: 'DELETE' })
+            .then(r => r.json()).then(d => {
+                if (d.err) { showToast('删除失败: ' + JSON.stringify(d.err), 'error'); return; }
+                showToast('已删除', 'success');
+                loadSLWebsites();
+            });
+    };
+
+    // ── IP Groups ──
+    function loadSLIPGroups() {
+        const el = document.getElementById('slIPGroupList');
+        el.innerHTML = '<div class="empty-state">加载中...</div>';
+        slFetch('/ip-groups').then(data => {
+            const items = data.data || [];
+            if (!items.length) { el.innerHTML = '<div class="empty-state">暂无 IP 组</div>'; return; }
+            el.innerHTML = '<table class="sl-table"><thead><tr><th>名称</th><th>类型</th><th>IP 数量</th><th>操作</th></tr></thead><tbody>' +
+                items.map(g => `
+                    <tr>
+                        <td><strong>${esc(g.name)}</strong></td>
+                        <td><span class="sl-badge ${g.type === 1 ? 'sl-badge-block' : 'sl-badge-ok'}">${g.type === 1 ? '黑名单' : '白名单'}</span></td>
+                        <td>${(g.ip_list || []).length}</td>
+                        <td class="sl-actions-cell">
+                            <button class="btn btn-danger btn-sm" onclick="window._slDeleteIPGroup(${g.id})">删除</button>
+                        </td>
+                    </tr>`).join('') + '</tbody></table>';
+        }).catch(e => { el.innerHTML = '<div class="empty-state">加载失败: ' + esc(e.message) + '</div>'; });
+    }
+
+    function createSLIPGroup(fd) {
+        const ips = fd.get('ips').split('\n').map(s => s.trim()).filter(Boolean);
+        const body = { name: fd.get('name'), type: parseInt(fd.get('type')), ip_list: ips };
+        fetch(SL + '/ip-groups', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+            .then(r => r.json()).then(d => {
+                if (d.error) { showToast('创建失败: ' + d.error, 'error'); return; }
+                if (d.err) { showToast('创建失败: ' + JSON.stringify(d.err), 'error'); return; }
+                showToast('IP 组创建成功', 'success');
+                document.getElementById('slIPGroupModal').classList.remove('active');
+                loadSLIPGroups();
+            }).catch(e => showToast('创建失败: ' + e.message, 'error'));
+    }
+
+    window._slDeleteIPGroup = function(id) {
+        if (!confirm('确定删除该 IP 组？')) return;
+        fetch(SL + '/ip-groups/' + id, { method: 'DELETE' })
+            .then(r => r.json()).then(d => {
+                if (d.err) { showToast('删除失败', 'error'); return; }
+                showToast('已删除', 'success');
+                loadSLIPGroups();
+            });
+    };
+
+    // ── Attack Logs ──
+    function loadSLLogs() {
+        const filter = document.getElementById('slLogFilter').value.trim();
+        const el = document.getElementById('slLogList');
+        el.innerHTML = '<div class="empty-state">加载中...</div>';
+        let url = '/logs?scope=log:detect_log&count=' + slState.logCount + '&offset=' + slState.logOffset;
+        if (filter) url += '&q=' + encodeURIComponent(filter);
+        slFetch(url).then(data => {
+            const items = data.data?.items || [];
+            const total = data.data?.total || 0;
+            if (!items.length) { el.innerHTML = '<div class="empty-state">暂无日志</div>'; renderSLLogPagination(total); return; }
+            el.innerHTML = '<table class="sl-table sl-log-table"><thead><tr><th>时间</th><th>来源 IP</th><th>目标域名</th><th>攻击类型</th><th>风险等级</th><th>规则</th></tr></thead><tbody>' +
+                items.map(l => {
+                    const time = l.time ? new Date(l.time).toLocaleString() : '-';
+                    const srcIp = l.src_ip || l.source_ip || '-';
+                    const host = l.host || '-';
+                    const atkType = l.attack_type || l.event_id || '-';
+                    const risk = l.risk_level || '-';
+                    const rule = l.rule_desc || l.rule_id || '-';
+                    const riskCls = risk === 'high' ? 'sl-badge-block' : risk === 'medium' ? 'sl-badge-warn' : 'sl-badge-ok';
+                    return `<tr>
+                        <td style="white-space:nowrap;font-size:0.78rem">${esc(time)}</td>
+                        <td>${esc(srcIp)}</td>
+                        <td>${esc(host)}</td>
+                        <td>${esc(atkType)}</td>
+                        <td><span class="sl-badge ${riskCls}">${esc(risk)}</span></td>
+                        <td style="font-size:0.78rem;max-width:200px;overflow:hidden;text-overflow:ellipsis" title="${esc(rule)}">${esc(rule)}</td>
+                    </tr>`;
+                }).join('') + '</tbody></table>';
+            renderSLLogPagination(total);
+        }).catch(e => { el.innerHTML = '<div class="empty-state">加载失败: ' + esc(e.message) + '</div>'; });
+    }
+
+    function renderSLLogPagination(total) {
+        const el = document.getElementById('slLogPagination');
+        if (total <= slState.logCount) { el.innerHTML = ''; return; }
+        const pages = Math.ceil(total / slState.logCount);
+        const current = Math.floor(slState.logOffset / slState.logCount);
+        let html = '<div class="sl-page-info">共 ' + total + ' 条</div>';
+        html += '<div class="sl-page-btns">';
+        if (current > 0) html += '<button class="btn btn-secondary btn-sm" onclick="window._slLogPage(0)">首页</button>';
+        if (current > 0) html += '<button class="btn btn-secondary btn-sm" onclick="window._slLogPage(' + ((current - 1) * slState.logCount) + ')">上一页</button>';
+        html += '<span class="sl-page-cur">' + (current + 1) + ' / ' + pages + '</span>';
+        if (current < pages - 1) html += '<button class="btn btn-secondary btn-sm" onclick="window._slLogPage(' + ((current + 1) * slState.logCount) + ')">下一页</button>';
+        html += '</div>';
+        el.innerHTML = html;
+    }
+
+    window._slLogPage = function(offset) {
+        slState.logOffset = offset;
+        loadSLLogs();
+    };
+
+    // ── System Info ──
+    function loadSLSystem() {
+        const el = document.getElementById('slSystemInfo');
+        el.innerHTML = '<div class="empty-state">加载中...</div>';
+        Promise.all([slFetch('/system'), slFetch('/license'), slFetch('/nodes')]).then(([sys, license, nodes]) => {
+            const hostname = sys.hostname || '-';
+            const vendor = sys.vendor || {};
+            const lic = license.data || {};
+            const nodeInfo = nodes.data || {};
+
+            el.innerHTML = `
+                <div class="sl-info-block">
+                    <h3>基本信息</h3>
+                    <div class="sl-info-row"><span>产品</span><span>${esc(vendor.product_name || '-')}</span></div>
+                    <div class="sl-info-row"><span>版本</span><span>${esc(vendor.version || '-')}</span></div>
+                    <div class="sl-info-row"><span>主机名</span><span>${esc(typeof hostname === 'string' ? hostname : JSON.stringify(hostname))}</span></div>
+                </div>
+                <div class="sl-info-block">
+                    <h3>许可证</h3>
+                    <div class="sl-info-row"><span>授权类型</span><span>${esc(lic.license_type || '-')}</span></div>
+                    <div class="sl-info-row"><span>到期时间</span><span>${lic.expired_at ? new Date(lic.expired_at).toLocaleDateString() : '-'}</span></div>
+                    <div class="sl-info-row"><span>最大节点</span><span>${esc(lic.max_nodes ?? '-')}</span></div>
+                </div>
+                <div class="sl-info-block">
+                    <h3>节点状态</h3>
+                    ${Array.isArray(nodeInfo) ? nodeInfo.map(n => `
+                        <div class="sl-info-row"><span>${esc(n.name || n.hostname || '-')}</span><span>${esc(n.status || 'unknown')}</span></div>
+                    `).join('') : '<div class="sl-info-row"><span>状态</span><span>' + esc(JSON.stringify(nodeInfo)) + '</span></div>'}
+                </div>`;
+        }).catch(e => { el.innerHTML = '<div class="empty-state">加载失败: ' + esc(e.message) + '</div>'; });
+    }
+
+    function fmtNum(n) {
+        if (typeof n !== 'number') return String(n || 0);
+        if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+        if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+        return String(n);
     }
 })();

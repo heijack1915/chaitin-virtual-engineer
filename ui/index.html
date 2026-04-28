@@ -18,6 +18,7 @@
     <main class="main">
         <nav class="tabs">
             <button class="tab active" data-tab="hosts">主机管理</button>
+            <button class="tab" data-tab="safeline">雷池管理</button>
             <button class="tab" data-tab="execute">终端执行</button>
             <button class="tab" data-tab="packages">安装包</button>
             <button class="tab" data-tab="knowledge">知识库</button>
@@ -33,6 +34,126 @@
                 </div>
                 <div id="hostList" class="host-list">
                     <div class="empty-state">暂无主机，点击右上角添加</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SafeLine WAF Management -->
+        <section id="tab-safeline" class="tab-content">
+            <!-- Config bar -->
+            <div class="panel sl-config-bar">
+                <div class="sl-config-row">
+                    <div class="form-inline">
+                        <label>API 地址</label>
+                        <input type="text" id="slUrl" placeholder="https://192.168.1.10:9443" style="width:260px">
+                    </div>
+                    <div class="form-inline">
+                        <label>API Token</label>
+                        <input type="password" id="slToken" placeholder="SafeLine API-Token" style="width:260px">
+                    </div>
+                    <button class="btn btn-secondary" id="slTestBtn">测试连接</button>
+                    <button class="btn btn-primary" id="slSaveBtn">保存配置</button>
+                    <span id="slConfigStatus" class="sl-config-status"></span>
+                </div>
+            </div>
+
+            <!-- Sub-tabs -->
+            <div class="sl-subtabs">
+                <button class="sl-subtab active" data-sl-tab="sl-overview">总览</button>
+                <button class="sl-subtab" data-sl-tab="sl-websites">站点管理</button>
+                <button class="sl-subtab" data-sl-tab="sl-ipgroups">IP 组</button>
+                <button class="sl-subtab" data-sl-tab="sl-logs">攻击日志</button>
+                <button class="sl-subtab" data-sl-tab="sl-system">系统信息</button>
+            </div>
+
+            <!-- Overview -->
+            <div id="sl-overview" class="sl-panel active">
+                <div class="panel">
+                    <div class="panel-header">
+                        <h2>防护总览</h2>
+                        <div class="header-actions">
+                            <select id="slDuration" class="select" style="min-width:140px">
+                                <option value="h">最近 24 小时</option>
+                                <option value="today">今天</option>
+                                <option value="yesterday">昨天</option>
+                                <option value="7doh">最近 7 天(按小时)</option>
+                                <option value="d">最近 30 天</option>
+                            </select>
+                            <button class="btn btn-secondary" id="slRefreshOverview">刷新</button>
+                        </div>
+                    </div>
+                    <div id="slOverviewCards" class="sl-overview-cards">
+                        <div class="empty-state">点击"刷新"加载数据</div>
+                    </div>
+                    <div id="slOverviewExtra" style="margin-top:16px"></div>
+                </div>
+            </div>
+
+            <!-- Websites -->
+            <div id="sl-websites" class="sl-panel">
+                <div class="panel">
+                    <div class="panel-header">
+                        <h2>站点列表</h2>
+                        <div class="header-actions">
+                            <select id="slWebMode" class="select" style="min-width:180px">
+                                <option value="SoftwareReverseProxy">软件反代</option>
+                                <option value="ContainerReverseProxy">容器反代</option>
+                            </select>
+                            <button class="btn btn-secondary" id="slRefreshWebsites">刷新</button>
+                            <button class="btn btn-primary" id="slAddWebsite">+ 新建站点</button>
+                        </div>
+                    </div>
+                    <div id="slWebsiteList" class="sl-table-wrap">
+                        <div class="empty-state">点击"刷新"加载站点列表</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- IP Groups -->
+            <div id="sl-ipgroups" class="sl-panel">
+                <div class="panel">
+                    <div class="panel-header">
+                        <h2>IP 组</h2>
+                        <div class="header-actions">
+                            <button class="btn btn-secondary" id="slRefreshIPGroups">刷新</button>
+                            <button class="btn btn-primary" id="slAddIPGroup">+ 新建 IP 组</button>
+                        </div>
+                    </div>
+                    <div id="slIPGroupList" class="sl-table-wrap">
+                        <div class="empty-state">点击"刷新"加载 IP 组列表</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Attack Logs -->
+            <div id="sl-logs" class="sl-panel">
+                <div class="panel">
+                    <div class="panel-header">
+                        <h2>攻击检测日志</h2>
+                        <div class="header-actions">
+                            <input type="text" id="slLogFilter" placeholder="搜索过滤..." class="sl-filter-input" style="width:220px">
+                            <button class="btn btn-secondary" id="slRefreshLogs">刷新</button>
+                        </div>
+                    </div>
+                    <div id="slLogList" class="sl-table-wrap">
+                        <div class="empty-state">点击"刷新"加载日志</div>
+                    </div>
+                    <div class="sl-pagination" id="slLogPagination"></div>
+                </div>
+            </div>
+
+            <!-- System Info -->
+            <div id="sl-system" class="sl-panel">
+                <div class="panel">
+                    <div class="panel-header">
+                        <h2>系统信息</h2>
+                        <div class="header-actions">
+                            <button class="btn btn-secondary" id="slRefreshSystem">刷新</button>
+                        </div>
+                    </div>
+                    <div id="slSystemInfo" class="sl-info-grid">
+                        <div class="empty-state">点击"刷新"加载系统信息</div>
+                    </div>
                 </div>
             </div>
         </section>
@@ -286,6 +407,98 @@
             </div>
         </section>
     </main>
+
+    <!-- Add Website Modal -->
+    <div id="slWebsiteModal" class="modal">
+        <div class="modal-content" style="max-width:600px">
+            <div class="modal-header">
+                <h3 id="slWebsiteModalTitle">新建站点</h3>
+                <button class="btn-close" data-close-modal>&times;</button>
+            </div>
+            <form id="slWebsiteForm">
+                <div class="form-group">
+                    <label>域名</label>
+                    <input type="text" name="domain" required placeholder="www.example.com">
+                </div>
+                <div class="form-group">
+                    <label>后端地址</label>
+                    <input type="text" name="upstream" required placeholder="192.168.1.100:8080">
+                </div>
+                <div class="form-group">
+                    <label>防护策略</label>
+                    <select name="policy_group" id="slPolicySelect" class="select" style="width:100%">
+                        <option value="3">引擎防护配置默认模板</option>
+                        <option value="null">不使用防护策略</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>操作模式</label>
+                    <select name="mode" class="select" style="width:100%">
+                        <option value="SoftwareReverseProxy">软件反代</option>
+                        <option value="ContainerReverseProxy">容器反代</option>
+                    </select>
+                </div>
+                <div class="form-group" style="border-bottom:none">
+                    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:0">
+                        <input type="checkbox" id="slWebHealthCheck" style="width:16px;height:16px;accent-color:var(--primary)">
+                        启用健康检查
+                    </label>
+                </div>
+                <div id="slWebHealthOpts" style="display:none;border-top:1px solid var(--border)">
+                    <div class="form-group">
+                        <label>健康检查协议</label>
+                        <select name="hc_protocol" class="select" style="width:100%">
+                            <option value="http">HTTP</option>
+                            <option value="tcp">TCP</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>探测地址 (Host)</label>
+                        <input type="text" name="hc_host" placeholder="与后端地址相同">
+                    </div>
+                    <div class="form-group">
+                        <label>探测端口</label>
+                        <input type="number" name="hc_port" placeholder="与后端端口相同">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-close-modal>取消</button>
+                    <button type="submit" class="btn btn-primary">创建</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Add IP Group Modal -->
+    <div id="slIPGroupModal" class="modal">
+        <div class="modal-content" style="max-width:560px">
+            <div class="modal-header">
+                <h3>新建 IP 组</h3>
+                <button class="btn-close" data-close-modal>&times;</button>
+            </div>
+            <form id="slIPGroupForm">
+                <div class="form-group">
+                    <label>名称</label>
+                    <input type="text" name="name" required placeholder="如：办公网段">
+                </div>
+                <div class="form-group">
+                    <label>IP/CIDR (每行一个)</label>
+                    <textarea name="ips" rows="5" placeholder="192.168.1.0/24&#10;10.0.0.1&#10;172.16.0.0/16"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>类型</label>
+                    <select name="type" class="select" style="width:100%">
+                        <option value="1">黑名单</option>
+                        <option value="0">白名单</option>
+                    </select>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-close-modal>取消</button>
+                    <button type="submit" class="btn btn-primary">创建</button>
+                </div>
+            </form>
+        </div>
+    </div>
 
     <!-- Host Ops Modal：安装/升级/卸载 -->
     <div id="hostOpsModal" class="modal">
