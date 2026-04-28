@@ -746,11 +746,12 @@
                 <button type="button" class="preset-btn" data-url="https://api.siliconflow.cn/v1" data-model="Qwen/Qwen2.5-72B-Instruct">硅基流动</button>
                 <button type="button" class="preset-btn" data-url="https://api.minimax.chat/v1" data-model="MiniMax-Text-01">MiniMax</button>
                 <button type="button" class="preset-btn" data-url="https://api.moonshot.cn/v1" data-model="moonshot-v1-128k">Moonshot 月之暗面</button>
-                <button type="button" class="preset-btn" data-url="https://api.stepfun.com/v1" data-model="step-1-8k">阶跃星辰 Step</button>
-                <button type="button" class="preset-btn" data-url="https://api.lingyiwanwu.com/v1" data-model="yi-large">零一万物 Yi</button>
-                <button type="button" class="preset-btn" data-url="https://api.sensenova.cn/v1" data-model="SenseNova-5">商汤日日新</button>
                 <button type="button" class="preset-btn" data-url="https://api.baichuan-ai.com/v1" data-model="Baichuan4">百川智能</button>
-                <button type="button" class="preset-btn" data-url="" data-model="" title="清除当前配置">清除</button>
+                <button type="button" class="preset-btn aggregator" data-url="https://openrouter.ai/api/v1" data-model="openai/gpt-4o" title="聚合平台 · 聚合多家模型，一个 Key 访问所有主流大模型">OpenRouter</button>
+                <button type="button" class="preset-btn aggregator" data-url="https://api.n1n.ai/v1" data-model="claude-sonnet-4-6" title="聚合平台 · 支持多种主流模型，兼容 OpenAI 格式">N1N</button>
+                <button type="button" class="preset-btn aggregator" data-url="https://api.lingyaai.cn/v1" data-model="gpt-4o" title="聚合平台 · 纯官方转接口，超高并发，支持所有主流模型" onclick="this.dataset.key='';document.getElementById('apiKey').value='';">灵芽</button>
+                <button type="button" class="preset-btn other-btn" data-url="" data-model="" data-action="other" title="手动填写任意 OpenAI 兼容格式的 API 地址">其他</button>
+                <button type="button" class="preset-btn clear-btn" data-url="" data-model="" title="清除当前配置">清除</button>
             </div>
             <div class="ai-model-warning">
                 <div class="warning-recommend">

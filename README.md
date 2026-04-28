@@ -241,6 +241,7 @@ knowledge.zip
 | safeline-user-operation-guide.zip | SL-20-25.03.004 | 用户操作手册完整内容：统计报表、日志分析、安全管理、系统监控、网络部署、系统设置 | 4.8M |
 | safeline-monitoring-snmp-syslog.zip | V1.1 | SNMP OID 完整参考表 + Syslog 所有日志字段定义 + attack_type 枚举（37种攻击类型） | 781K |
 | safeline-hardware-deployment-plans.zip | V1.2 | 硬件 WAF 部署方案（透明桥/镜像旁路/透明代理/反向代理），**以硬件为主** | 8.3M |
+| safeline-api-management.zip | V1.0 | **OpenAPI 管理指南**：认证方式、站点/策略/IP组/日志 API 完整操作方法，配合 AI 对话管理雷池 | 227K |
 
 ## SafeLine WAF 支持的部署模式
 

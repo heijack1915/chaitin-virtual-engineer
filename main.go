@@ -83,6 +83,19 @@ func cleanOldProcess(port int) {
 	}
 }
 
+
+var safelineConfigPath string
+
+func loadSafelineConfigPkg() map[string]string {
+	data, err := os.ReadFile(safelineConfigPath)
+	if err != nil {
+		return map[string]string{}
+	}
+	var cfg map[string]string
+	json.Unmarshal(data, &cfg)
+	return cfg
+}
+
 func main() {
 	flag.Parse()
 
@@ -504,22 +517,13 @@ func main() {
 
 
 		// ── SafeLine WAF Management ─────────────────────────────────────────────
-		safelineConfigPath := filepath.Join(*dataDir, "safeline_config.json")
-		loadSafelineConfig := func() map[string]string {
-			data, err := os.ReadFile(safelineConfigPath)
-			if err != nil {
-				return map[string]string{}
-			}
-			var cfg map[string]string
-			json.Unmarshal(data, &cfg)
-			return cfg
-		}
+		safelineConfigPath = filepath.Join(*dataDir, "safeline_config.json")
 		saveSafelineConfig := func(cfg map[string]string) {
 			data, _ := json.MarshalIndent(cfg, "", "  ")
 			os.WriteFile(safelineConfigPath, data, 0644)
 		}
 		getSafeLineClient := func(c echo.Context) *safeline.Client {
-			cfg := loadSafelineConfig()
+			cfg := loadSafelineConfigPkg()
 			url := cfg["url"]
 			token := cfg["token"]
 			if url == "" || token == "" {
@@ -529,7 +533,7 @@ func main() {
 		}
 
 		api.GET("/safeline/config", func(c echo.Context) error {
-			return c.JSON(200, loadSafelineConfig())
+			return c.JSON(200, loadSafelineConfigPkg())
 		})
 		api.POST("/safeline/config", func(c echo.Context) error {
 			var cfg map[string]string
@@ -860,6 +864,41 @@ func main() {
 [步骤8] 删除配置文件：rm -rf /etc/docker /etc/containerd /etc/default/docker /etc/sysconfig/docker /etc/profile.d/docker.sh /etc/profile.d/docker-compose.sh
 [步骤9] 清理残留软链接：find /usr -type l -name "*docker*" -delete 2>/dev/null || true; find /usr/local -type l -name "*docker*" -delete 2>/dev/null || true`
 
+			systemPrompt += `
+
+【SafeLine WAF API 操作 - 通过 API 管理雷池配置】
+你可以直接通过 SafeLine OpenAPI 查询和管理雷池 WAF 的配置。
+使用格式: [SAFEAPI: 操作名|参数1=值1|参数2=值2]
+
+可用操作:
+- get_system: 获取系统信息（版本、许可证等）
+- get_license: 获取许可证详情
+- get_nodes: 获取节点状态信息
+- get_overview|时长=h: 获取防护总览统计（时长可选 h/d/w/M）
+- get_websites: 获取所有站点列表（含域名、后端、健康检查状态）
+- get_site|id=3: 获取指定站点详细配置
+- create_site|域名=xxx|后端=ip:port|策略=3|健康检查=yes: 创建站点（策略默认3）
+- delete_site|id=3: 删除指定站点
+- toggle_site|id=3|启用=true: 启用或禁用站点
+- get_policies: 获取所有防护策略组列表
+- get_certs: 获取证书列表
+- get_ip_groups: 获取所有 IP 组（黑名单/白名单）
+- create_ip_group|名称=xxx|类型=黑名单|IP=1.2.3.4,5.6.7.8: 创建 IP 组（类型: 黑名单/白名单）
+- delete_ip_group|id=3: 删除指定 IP 组
+- get_logs|数量=20|过滤=xxx: 查询攻击日志（支持过滤关键词）
+- get_acl: 获取自定义规则模板
+- get_detector: 获取检测引擎状态
+
+重要规则:
+1. 查询操作(get_*)可以直接执行，创建/删除/修改操作前必须先告知用户即将执行的操作并征得确认
+2. 每次只输出一个 [SAFEAPI:...] 调用，等待返回结果后再决定下一步
+3. 创建站点时，后端地址格式为 ip:port（默认端口80）
+4. 健康检查默认探测后端服务，创建站点时可指定 健康检查=yes 开启
+5. 用户说大白话（如"帮我加个站点"），你需要自行提取参数并调用对应 API
+6. 不要编造 API 返回结果，必须基于系统返回的真实数据回复
+`
+
+
 		if kbContext != "" {
 			systemPrompt += "\n\n内置知识库：" + kbContext
 		}
@@ -932,6 +971,26 @@ func main() {
 				sseSend(map[string]interface{}{"type": "error", "content": errMsg})
 				return nil
 			}
+
+				// Check if AI wants to call SafeLine API
+				safeAPIAction := ""
+				if idx := strings.Index(aiText, "[SAFEAPI:"); idx >= 0 {
+					end := strings.Index(aiText[idx:], "]")
+					if end > 0 {
+						safeAPIAction = strings.TrimSpace(aiText[idx+9 : idx+end])
+					}
+				}
+				if safeAPIAction != "" {
+					sseSend(map[string]interface{}{"type": "turn", "role": "assistant", "content": aiText})
+					apiResult := executeSafeAPI(safeAPIAction)
+					sseSend(map[string]interface{}{"type": "turn", "role": "tool_result", "content": "SafeLine API 调用结果:\n" + apiResult})
+					messages = append(messages,
+						map[string]string{"role": "assistant", "content": aiText},
+						map[string]string{"role": "user", "content": "[这是系统返回的真实 API 调用结果]\n" + apiResult + "\n请根据以上真实结果继续操作。"},
+					)
+					continue
+				}
+
 
 			// Check if AI wants to load a knowledge base file
 			loadTarget := ""
@@ -1110,4 +1169,329 @@ func getString(m map[string]interface{}, key string) string {
 		}
 	}
 	return ""
+}
+
+// executeSafeAPI parses and executes a SafeLine API action from AI
+// Format: "action|param1=val1|param2=val2"
+func executeSafeAPI(action string) string {
+	cfg := loadSafelineConfigPkg()
+	url := cfg["url"]
+	token := cfg["token"]
+	if url == "" || token == "" {
+		return "[错误] 未配置雷池 API 连接。请先在「雷池管理」页面配置 API 地址和 Token。"
+	}
+	client := safeline.NewClient(url, token)
+
+	parts := strings.Split(action, "|")
+	op := strings.TrimSpace(parts[0])
+	params := map[string]string{}
+	for _, p := range parts[1:] {
+		kv := strings.SplitN(p, "=", 2)
+		if len(kv) == 2 {
+			params[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1])
+		}
+	}
+
+	switch op {
+	case "get_system":
+		info, err := client.GetSystemInfo()
+		if err != nil {
+			return fmt.Sprintf("[错误] %s", err)
+		}
+		out, _ := json.MarshalIndent(info, "", "  ")
+		return string(out)
+
+	case "get_license":
+		resp, err := client.GetLicense()
+		if err != nil {
+			return fmt.Sprintf("[错误] %s", err)
+		}
+		out, _ := json.MarshalIndent(resp, "", "  ")
+		return string(out)
+
+	case "get_nodes":
+		resp, err := client.GetNodeInfo()
+		if err != nil {
+			return fmt.Sprintf("[错误] %s", err)
+		}
+		out, _ := json.MarshalIndent(resp, "", "  ")
+		return string(out)
+
+	case "get_overview":
+		duration := params["时长"]
+		if duration == "" {
+			duration = "h"
+		}
+		resp, err := client.GetOverview(duration, map[string]string{})
+		if err != nil {
+			return fmt.Sprintf("[错误] %s", err)
+		}
+		out, _ := json.MarshalIndent(resp, "", "  ")
+		return string(out)
+
+	case "get_websites":
+		resp, err := client.GetWebsites("SoftwareReverseProxy")
+		if err != nil {
+			return fmt.Sprintf("[错误] %s", err)
+		}
+		type siteSummary struct {
+			ID          int                     `json:"id"`
+			Name        string                  `json:"name"`
+			ServerNames []string                `json:"server_names"`
+			IsEnabled   bool                    `json:"is_enabled"`
+			PolicyGroup interface{}             `json:"policy_group"`
+			Servers     []map[string]interface{} `json:"servers"`
+			HealthCheck interface{}             `json:"health_check_status"`
+		}
+		items, _ := resp.Data.([]interface{})
+		var summaries []siteSummary
+		for _, item := range items {
+			m, _ := item.(map[string]interface{})
+			s := siteSummary{ID: int(m["id"].(float64))}
+			if v, ok := m["name"].(string); ok {
+				s.Name = v
+			}
+			if v, ok := m["server_names"].([]interface{}); ok {
+				for _, sn := range v {
+					if snStr, ok := sn.(string); ok {
+						s.ServerNames = append(s.ServerNames, snStr)
+					}
+				}
+			}
+			s.IsEnabled = m["is_enabled"].(bool)
+			s.PolicyGroup = m["policy_group"]
+			if bc, ok := m["backend_config"].(map[string]interface{}); ok {
+				if hcs, ok := bc["health_check_status"].(string); ok {
+					s.HealthCheck = hcs
+				}
+				if srvs, ok := bc["servers"].([]interface{}); ok {
+					for _, srv := range srvs {
+						if sm, ok := srv.(map[string]interface{}); ok {
+							s.Servers = append(s.Servers, map[string]interface{}{"host": sm["host"], "port": sm["port"]})
+						}
+					}
+				}
+			}
+			summaries = append(summaries, s)
+		}
+		out, _ := json.MarshalIndent(summaries, "", "  ")
+		return fmt.Sprintf("共 %d 个站点:\n%s", len(summaries), string(out))
+
+	case "get_site":
+		id, _ := strconv.Atoi(params["id"])
+		if id == 0 {
+			return "[错误] 缺少参数 id"
+		}
+		resp, err := client.GetWebsite("SoftwareReverseProxy", id)
+		if err != nil {
+			return fmt.Sprintf("[错误] %s", err)
+		}
+		out, _ := json.MarshalIndent(resp.Data, "", "  ")
+		return string(out)
+
+	case "create_site":
+		domain := params["域名"]
+		upstream := params["后端"]
+		if domain == "" || upstream == "" {
+			return "[错误] 创建站点需要至少提供域名和后端地址"
+		}
+		policyGroup := 3
+		if pg := params["策略"]; pg != "" {
+			policyGroup, _ = strconv.Atoi(pg)
+		}
+		upstreamHost := upstream
+		upstreamPort := 80
+		if idx := strings.LastIndex(upstream, ":"); idx > 0 {
+			upstreamHost = upstream[:idx]
+			upstreamPort, _ = strconv.Atoi(upstream[idx+1:])
+		}
+		hcEnabled := strings.ToLower(params["健康检查"]) == "yes" || strings.ToLower(params["健康检查"]) == "true"
+		hcProtocol := params["hc协议"]
+		if hcProtocol == "" {
+			hcProtocol = "http"
+		}
+		hcHost := params["hc地址"]
+		if hcHost == "" {
+			hcHost = upstreamHost
+		}
+		hcPort := params["hc端口"]
+		if hcPort == "" {
+			hcPort = strconv.Itoa(upstreamPort)
+		}
+		hcPortInt, _ := strconv.Atoi(hcPort)
+
+		site := map[string]interface{}{
+			"mode": "SoftwareReverseProxy", "name": domain,
+			"server_names": []string{domain}, "ip": []string{"0.0.0.0", "::"}, "interface": "virtual",
+			"ports":              []map[string]interface{}{{"port": 80, "ssl": false, "http2": false, "sni": false, "is_double_cert": false}},
+			"backend_config": map[string]interface{}{
+				"type": "proxy", "load_balance_policy": "Round Robin", "x_forwarded_for_action": "append",
+				"servers": []map[string]interface{}{{"host": upstreamHost, "port": upstreamPort, "protocol": "http", "weight": 1, "is_enabled": true}},
+				"health_check_config": map[string]interface{}{
+					"is_enabled": hcEnabled, "check_type": hcProtocol, "host": hcHost, "port": hcPortInt,
+					"path": "/", "method": "GET", "interval": 10000, "timeout": 5000, "fall": 3, "rise": 2,
+					"check_http_expect_alive": []string{"http_2xx", "http_3xx"},
+				},
+			},
+			"session_method":      map[string]interface{}{"type": "off"},
+			"advanced_cache":      false, "ignore_cert": false, "ntlm_enabled": false,
+			"url_paths":           []map[string]interface{}{{"op": "pre", "url_path": "/"}},
+			"detector_ip_source":  []string{"Socket"}, "detector_ip_source_from": "local",
+			"access_log":          map[string]interface{}{"is_enabled": true, "log_option": "Non-Persistence", "req_body": true, "rsp_body": false, "log_request_header": false, "log_response_header": false},
+			"proxy_bind_config":   map[string]interface{}{"enable": false, "hash_select_ip_method": "remote_addr_and_port", "proxy_ip_list": nil},
+			"selected_tengine":    map[string]interface{}{"tengine_list": nil, "type": "all"},
+			"asset_group":         1, "ssl_cert": nil, "ssl_ciphers": "", "ssl_gm_cert": nil, "ssl_protocols": []interface{}{}, "remark": "",
+			"policy_group":        policyGroup,
+		}
+		resp, err := client.CreateWebsite("SoftwareReverseProxy", site)
+		if err != nil {
+			return fmt.Sprintf("[错误] %s", err)
+		}
+		if resp.Err != nil {
+			return fmt.Sprintf("[错误] %v", resp.Err)
+		}
+		out, _ := json.MarshalIndent(resp.Data, "", "  ")
+		return "站点创建成功！\n" + string(out)
+
+	case "delete_site":
+		id, _ := strconv.Atoi(params["id"])
+		if id == 0 {
+			return "[错误] 缺少参数 id"
+		}
+		resp, err := client.DeleteWebsite("SoftwareReverseProxy", id)
+		if err != nil {
+			return fmt.Sprintf("[错误] %s", err)
+		}
+		if resp.Err != nil {
+			return fmt.Sprintf("[错误] %v", resp.Err)
+		}
+		return "站点已成功删除"
+
+	case "toggle_site":
+		id, _ := strconv.Atoi(params["id"])
+		if id == 0 {
+			return "[错误] 缺少参数 id"
+		}
+		enabled := true
+		if v := params["启用"]; v != "" {
+			enabled = v == "true" || v == "yes"
+		}
+		resp, err := client.ToggleWebsite(id, enabled)
+		if err != nil {
+			return fmt.Sprintf("[错误] %s", err)
+		}
+		if resp.Err != nil {
+			return fmt.Sprintf("[错误] %v", resp.Err)
+		}
+		return fmt.Sprintf("站点已%s", map[bool]string{true: "启用", false: "禁用"}[enabled])
+
+	case "get_policies":
+		resp, err := client.GetPolicyGroups()
+		if err != nil {
+			return fmt.Sprintf("[错误] %s", err)
+		}
+		type policySummary struct {
+			ID   int
+			Name string
+		}
+		var summaries []policySummary
+		if items, ok := resp.Data.([]interface{}); ok {
+			for _, item := range items {
+				m, _ := item.(map[string]interface{})
+				summaries = append(summaries, policySummary{ID: int(m["id"].(float64)), Name: getString(m, "name")})
+			}
+		}
+		out, _ := json.MarshalIndent(summaries, "", "  ")
+		return fmt.Sprintf("共 %d 个策略组:\n%s", len(summaries), string(out))
+
+	case "get_certs":
+		resp, err := client.GetCerts()
+		if err != nil {
+			return fmt.Sprintf("[错误] %s", err)
+		}
+		out, _ := json.MarshalIndent(resp.Data, "", "  ")
+		return string(out)
+
+	case "get_ip_groups":
+		resp, err := client.GetIPGroups()
+		if err != nil {
+			return fmt.Sprintf("[错误] %s", err)
+		}
+		out, _ := json.MarshalIndent(resp.Data, "", "  ")
+		return string(out)
+
+	case "create_ip_group":
+		name := params["名称"]
+		if name == "" {
+			return "[错误] 缺少参数 名称"
+		}
+		ipType := 1
+		if v := params["类型"]; v == "白名单" || v == "whitelist" || v == "0" {
+			ipType = 0
+		}
+		var ipList []string
+		if ips := params["IP"]; ips != "" {
+			ipList = strings.Split(ips, ",")
+		}
+		group := map[string]interface{}{"name": name, "type": ipType, "ip_list": ipList}
+		resp, err := client.CreateIPGroup(group)
+		if err != nil {
+			return fmt.Sprintf("[错误] %s", err)
+		}
+		if resp.Err != nil {
+			return fmt.Sprintf("[错误] %v", resp.Err)
+		}
+		out, _ := json.MarshalIndent(resp.Data, "", "  ")
+		return "IP 组创建成功！\n" + string(out)
+
+	case "delete_ip_group":
+		id, _ := strconv.Atoi(params["id"])
+		if id == 0 {
+			return "[错误] 缺少参数 id"
+		}
+		resp, err := client.DeleteIPGroup(id)
+		if err != nil {
+			return fmt.Sprintf("[错误] %s", err)
+		}
+		if resp.Err != nil {
+			return fmt.Sprintf("[错误] %v", resp.Err)
+		}
+		return "IP 组已成功删除"
+
+	case "get_logs":
+		count := 20
+		if v := params["数量"]; v != "" {
+			count, _ = strconv.Atoi(v)
+		}
+		offset := 0
+		if v := params["偏移"]; v != "" {
+			offset, _ = strconv.Atoi(v)
+		}
+		filter := params["过滤"]
+		resp, err := client.GetAttackLogs("log:detect_log", filter, count, offset)
+		if err != nil {
+			return fmt.Sprintf("[错误] %s", err)
+		}
+		out, _ := json.MarshalIndent(resp.Data, "", "  ")
+		return string(out)
+
+	case "get_acl":
+		resp, err := client.GetACLRuleTemplates()
+		if err != nil {
+			return fmt.Sprintf("[错误] %s", err)
+		}
+		out, _ := json.MarshalIndent(resp.Data, "", "  ")
+		return string(out)
+
+	case "get_detector":
+		resp, err := client.GetDetectorState()
+		if err != nil {
+			return fmt.Sprintf("[错误] %s", err)
+		}
+		out, _ := json.MarshalIndent(resp.Data, "", "  ")
+		return string(out)
+
+	default:
+		return fmt.Sprintf("[错误] 未知的 SafeLine API 操作: %s\n可用操作: get_system, get_license, get_nodes, get_overview, get_websites, get_site, create_site, delete_site, toggle_site, get_policies, get_certs, get_ip_groups, create_ip_group, delete_ip_group, get_logs, get_acl, get_detector", op)
+	}
 }

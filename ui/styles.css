@@ -549,6 +549,43 @@ body {
     color: #22c55e;
 }
 
+.preset-btn.aggregator {
+    border-color: rgba(168, 85, 247, 0.4);
+    color: #a855f7;
+}
+
+.preset-btn.aggregator:hover {
+    border-color: #a855f7;
+    background: rgba(168, 85, 247, 0.08);
+    color: #a855f7;
+}
+
+.preset-btn.aggregator.active {
+    border-color: #a855f7;
+    background: rgba(168, 85, 247, 0.15);
+    color: #a855f7;
+}
+
+.preset-btn.other-btn {
+    border-color: rgba(100, 116, 139, 0.4);
+    color: var(--secondary);
+}
+
+.preset-btn.other-btn:hover {
+    border-color: var(--secondary);
+    background: rgba(100, 116, 139, 0.08);
+}
+
+.preset-btn.clear-btn {
+    color: var(--danger);
+    border-color: rgba(239, 68, 68, 0.3);
+}
+
+.preset-btn.clear-btn:hover {
+    border-color: var(--danger);
+    background: rgba(239, 68, 68, 0.08);
+}
+
 .ai-model-warning {
     padding: 10px 20px 14px;
     border-top: 1px solid var(--border);

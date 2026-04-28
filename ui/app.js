@@ -1306,6 +1306,8 @@
                 document.getElementById('modelName').value = model || '';
                 if (!url && !model) {
                     document.getElementById('apiKey').value = '';
+                    document.getElementById('apiUrl').value = '';
+                    document.getElementById('modelName').value = '';
                 }
                 document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
