@@ -933,8 +933,11 @@ func main() {
 		}
 
 
-		// Agentic loop: no artificial round limit — AI decides when to stop
-		for round := 0; ; round++ {
+		// Agentic loop — AI decides when to stop, but cap to prevent runaway loops
+		for round := 0; round < 30; round++ {
+			if round == 25 {
+				messages = append(messages, map[string]string{"role": "user", "content": "[系统提示] 你已执行了很多轮操作，请立即停止执行新命令，直接根据已有信息总结回复用户。"})
+			}
 			aiReq := map[string]interface{}{
 				"model":    model,
 				"messages": messages,
