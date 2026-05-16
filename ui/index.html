@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chaitin Virtual Engineer</title>
-    <link rel="stylesheet" href="styles.css?v=19">
+    <link rel="stylesheet" href="styles.css?v=32">
 </head>
 <body>
 <div class="app">
@@ -21,6 +21,7 @@
             <button class="tab" data-tab="execute">终端执行</button>
             <button class="tab" data-tab="packages">安装包</button>
             <button class="tab" data-tab="knowledge">知识库</button>
+            <button class="tab" data-tab="threatintel">CVE 查询</button>
             <button class="tab" data-tab="chat">AI 对话</button>
         </nav>
 
@@ -256,6 +257,26 @@
             </div>
         </section>
 
+        <!-- Threat Intelligence -->
+        <section id="tab-threatintel" class="tab-content">
+            <div class="panel">
+                <div class="panel-header">
+                    <h2>CVE 漏洞查询</h2>
+                </div>
+                <div class="ti-lookup-bar" style="margin-bottom:16px">
+                    <input type="text" id="tiCveInput" class="input" placeholder="输入CVE编号，如 CVE-2026-31431" style="flex:1;max-width:500px;font-size:1rem" onkeydown="if(event.key==='Enter')lookupCVE()">
+                    <button class="btn btn-primary" id="tiLookupBtn" onclick="lookupCVE()">查询并分析</button>
+                </div>
+                <div class="ti-disclaimer">
+                    <div class="ti-disclaimer-icon">!</div>
+                    <div class="ti-disclaimer-text">
+                        输入已知的 CVE 编号，系统将自动从 NVD 获取漏洞详情，并基于您当前环境分析是否受影响、漏洞原理、修复方案及对长亭产品的影响评估。<strong>数据来自 NVD，非长亭官方渠道</strong>，仅供参考。
+                    </div>
+                </div>
+                <div id="tiThreatList" class="ti-threat-list"></div>
+            </div>
+        </section>
+
         <!-- AI Chat -->
         <section id="tab-chat" class="tab-content">
             <div class="panel chat-panel">
@@ -287,171 +308,129 @@
         </section>
     </main>
 
-    <!-- Host Ops Modal：安装/升级/卸载 -->
-    <div id="hostOpsModal" class="modal">
-        <div class="modal-content" style="max-width:560px">
+    <!-- Add Website Modal -->
+    <div id="slWebsiteModal" class="modal">
+        <div class="modal-content" style="max-width:600px">
             <div class="modal-header">
-                <h3 id="hostOpsTitle">主机操作</h3>
+                <h3 id="slWebsiteModalTitle">新建站点</h3>
                 <button class="btn-close" data-close-modal>&times;</button>
             </div>
-
-            <!-- 操作类型选择 -->
-            <div class="form-group">
-                <label>操作类型</label>
-                <div class="deploy-mode-group deploy-mode-grid" style="grid-template-columns:1fr 1fr 1fr">
-                    <label class="mode-card">
-                        <input type="radio" name="opsType" value="install" checked>
-                        <div class="mode-card-body">
-                            <div class="mode-title">安装</div>
-                            <div class="mode-desc">全新部署 WAF</div>
-                        </div>
-                    </label>
-                    <label class="mode-card">
-                        <input type="radio" name="opsType" value="upgrade">
-                        <div class="mode-card-body">
-                            <div class="mode-title">升级</div>
-                            <div class="mode-desc">升级已有 WAF</div>
-                        </div>
-                    </label>
-                    <label class="mode-card">
-                        <input type="radio" name="opsType" value="uninstall">
-                        <div class="mode-card-body">
-                            <div class="mode-title">卸载</div>
-                            <div class="mode-desc">清除 WAF 所有数据</div>
-                        </div>
-                    </label>
-                </div>
-            </div>
-
-            <!-- 安装专属选项 -->
-            <div id="opsInstallOpts">
+            <form id="slWebsiteForm">
                 <div class="form-group">
-                    <label>安装包（主机上的路径，SFTP 已传好）</label>
-                    <div style="display:flex;gap:8px">
-                        <select id="opsPkgSelect" class="select" style="flex:1">
-                            <option value="">-- 选择已上传的安装包 --</option>
-                        </select>
-                    </div>
-                    <div style="margin-top:8px">
-                        <label style="font-size:0.82rem;color:var(--text-muted)">或手动填写主机上的路径：</label>
-                        <input type="text" id="opsPkgPath" placeholder="/tmp/safeline-2-software-installer.bin" style="margin-top:4px">
-                    </div>
+                    <label>域名</label>
+                    <input type="text" name="domain" required placeholder="www.example.com">
                 </div>
                 <div class="form-group">
-                    <label>部署模式</label>
-                    <div class="deploy-mode-group deploy-mode-grid">
-                        <label class="mode-card">
-                            <input type="radio" name="opsDeplMode" value="software" checked>
-                            <div class="mode-card-body"><div class="mode-title">软件反代单机</div><div class="mode-desc">最常用，单节点反向代理</div></div>
-                        </label>
-                        <label class="mode-card">
-                            <input type="radio" name="opsDeplMode" value="s20_management">
-                            <div class="mode-card-body"><div class="mode-title">反代集群-管理节点</div><div class="mode-desc">集群管理节点</div></div>
-                        </label>
-                        <label class="mode-card">
-                            <input type="radio" name="opsDeplMode" value="s20_agent">
-                            <div class="mode-card-body"><div class="mode-title">反代集群-检测节点</div><div class="mode-desc">集群检测/转发节点</div></div>
-                        </label>
-                        <label class="mode-card">
-                            <input type="radio" name="opsDeplMode" value="c20_master">
-                            <div class="mode-card-body"><div class="mode-title">嵌入式单机/集群管理</div><div class="mode-desc">T1k 协议嵌入式</div></div>
-                        </label>
-                        <label class="mode-card">
-                            <input type="radio" name="opsDeplMode" value="c20_slave">
-                            <div class="mode-card-body"><div class="mode-title">嵌入式集群-检测节点</div><div class="mode-desc">嵌入式检测节点</div></div>
-                        </label>
-                        <label class="mode-card">
-                            <input type="radio" name="opsDeplMode" value="traffic_mirror">
-                            <div class="mode-card-body"><div class="mode-title">软件流量镜像</div><div class="mode-desc">旁路镜像检测</div></div>
-                        </label>
-                    </div>
-                </div>
-                <div id="opsMgmtOpts" style="display:none">
-                    <div class="form-group">
-                        <label>管理节点服务范围</label>
-                        <div style="display:flex;flex-direction:column;gap:4px">
-                            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-                                <input type="radio" name="opsMgmtFlavor" value="full" checked>
-                                <span>完整部署（管理 + 检测 + 转发）</span>
-                            </label>
-                            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-                                <input type="radio" name="opsMgmtFlavor" value="block-service">
-                                <span>仅管理（不含检测/转发服务）</span>
-                            </label>
-                            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-                                <input type="radio" name="opsMgmtFlavor" value="web-config">
-                                <span>仅管理（部署后通过 6767 页面配置）</span>
-                            </label>
-                        </div>
-                    </div>
-                </div>
-                <div id="opsAgentOpts" style="display:none">
-                    <div class="form-group">
-                        <label>已部署的管理节点</label>
-                        <select id="ops-mgmt-node-select" class="select" style="width:100%">
-                            <option value="">-- 手动填写 --</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>管理节点地址（格式：https://IP:9443）</label>
-                        <input type="text" id="opsManagementAddr" placeholder="https://192.168.1.10:9443">
-                    </div>
+                    <label>后端地址</label>
+                    <input type="text" name="upstream" required placeholder="192.168.1.100:8080">
                 </div>
                 <div class="form-group">
-                    <label>安装目录（默认 /data/safeline）</label>
-                    <input type="text" id="opsInstallDir" placeholder="/data/safeline">
+                    <label>防护策略</label>
+                    <select name="policy_group" id="slPolicySelect" class="select" style="width:100%">
+                        <option value="3">引擎防护配置默认模板</option>
+                        <option value="null">不使用防护策略</option>
+                    </select>
                 </div>
                 <div class="form-group">
-                    <label>安装方式</label>
-                    <div class="deploy-mode-group" style="flex-direction:row;gap:8px">
-                        <label class="mode-card" style="flex:1">
-                            <input type="radio" name="opsInstallMethod" value="kb" checked>
-                            <div class="mode-card-body"><div class="mode-title">离线（知识库）</div><div class="mode-desc">无需网络，命令回显到终端</div></div>
-                        </label>
-                        <label class="mode-card" style="flex:1">
-                            <input type="radio" name="opsInstallMethod" value="ai">
-                            <div class="mode-card-body"><div class="mode-title">AI 辅助</div><div class="mode-desc">AI 分析执行，支持排错</div></div>
-                        </label>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 升级专属选项 -->
-            <div id="opsUpgradeOpts" style="display:none">
-                <div class="form-group">
-                    <label>安装目录（默认 /data/safeline）</label>
-                    <input type="text" id="opsUpgradeInstallDir" placeholder="/data/safeline">
-                </div>
-            </div>
-
-            <!-- 卸载警告 -->
-            <div id="opsUninstallOpts" style="display:none">
-                <div class="form-group">
-                    <div style="background:#fef2f2;border-left:3px solid var(--danger);padding:12px 14px;border-radius:0 6px 6px 0;font-size:0.875rem;color:#991b1b">
-                        ⚠ 卸载将清除 WAF <strong>所有数据</strong>，包括配置、规则、日志，操作不可逆。请确认后继续。
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label>参考安装目录（留空则自动探测）</label>
-                    <input type="text" id="opsUninstallDir" placeholder="留空自动探测，或填 /data/safeline">
+                    <label>操作模式</label>
+                    <select name="mode" class="select" style="width:100%">
+                        <option value="SoftwareReverseProxy">软件反代</option>
+                        <option value="ContainerReverseProxy">容器反代</option>
+                    </select>
                 </div>
                 <div class="form-group" style="border-bottom:none">
                     <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:0">
-                        <input type="checkbox" id="opsUninstallDocker" style="width:16px;height:16px;accent-color:var(--danger)">
-                        同时彻底卸载 Docker（将删除 Docker 服务、程序、配置、网络规则等）
+                        <input type="checkbox" id="slWebHealthCheck" style="width:16px;height:16px;accent-color:var(--primary)">
+                        启用健康检查
                     </label>
-                    <div id="opsDockerDataOpts" style="margin-top:8px;padding-left:24px;display:none">
-                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.82rem;color:var(--text-muted)">
-                            <input type="checkbox" id="opsRemoveDockerData" style="width:14px;height:14px;accent-color:var(--danger)">
-                            同时删除所有 Docker 镜像、容器、数据卷（/var/lib/docker）
-                        </label>
+                </div>
+                <div id="slWebHealthOpts" style="display:none;border-top:1px solid var(--border)">
+                    <div class="form-group">
+                        <label>健康检查协议</label>
+                        <select name="hc_protocol" class="select" style="width:100%">
+                            <option value="http">HTTP</option>
+                            <option value="tcp">TCP</option>
+                        </select>
                     </div>
+                    <div class="form-group">
+                        <label>探测地址 (Host)</label>
+                        <input type="text" name="hc_host" placeholder="与后端地址相同">
+                    </div>
+                    <div class="form-group">
+                        <label>探测端口</label>
+                        <input type="number" name="hc_port" placeholder="与后端端口相同">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-close-modal>取消</button>
+                    <button type="submit" class="btn btn-primary">创建</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Add IP Group Modal -->
+    <div id="slIPGroupModal" class="modal">
+        <div class="modal-content" style="max-width:560px">
+            <div class="modal-header">
+                <h3>新建 IP 组</h3>
+                <button class="btn-close" data-close-modal>&times;</button>
+            </div>
+            <form id="slIPGroupForm">
+                <div class="form-group">
+                    <label>名称</label>
+                    <input type="text" name="name" required placeholder="如：办公网段">
+                </div>
+                <div class="form-group">
+                    <label>IP/CIDR (每行一个)</label>
+                    <textarea name="ips" rows="5" placeholder="192.168.1.0/24&#10;10.0.0.1&#10;172.16.0.0/16"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>类型</label>
+                    <select name="type" class="select" style="width:100%">
+                        <option value="1">黑名单</option>
+                        <option value="0">白名单</option>
+                    </select>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-close-modal>取消</button>
+                    <button type="submit" class="btn btn-primary">创建</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Host Ops Modal: 产品选择 → 操作 -->
+    <div id="hostOpsModal" class="modal">
+        <div class="modal-content" style="max-width:900px">
+            <div class="modal-header">
+                <h3 id="hostOpsTitle">选择产品</h3>
+                <button class="btn-close" data-close-modal>&times;</button>
+            </div>
+
+            <!-- Step 1: 产品选择 -->
+            <div id="opsProductSelect">
+                <div class="form-inline" style="gap:12px;align-items:center">
+                    <label style="font-weight:600;white-space:nowrap">选择产品</label>
+                    <select id="opsProductDropdown" class="select" style="min-width:200px">
+                        <option value="">-- 请选择 --</option>
+                        <option value="safeline">雷池 (SafeLine WAF)</option>
+                        <option value="cloudwalker">牧云 (CloudWalker HIDS)</option>
+                        <option value="d-sensor">谛听 (D-Sensor)</option>
+                        <option value="x-ray">洞鉴 (X-Ray)</option>
+                        <option value="jupiter">全悉 (Jupiter)</option>
+                    </select>
                 </div>
             </div>
 
-            <div class="modal-footer">
-                <button class="btn btn-secondary" data-close-modal>取消</button>
-                <button class="btn btn-primary" id="btnConfirmOps">执行 →</button>
+            <!-- Step 2: 产品操作面板 -->
+            <div id="opsProductPanel" style="display:none">
+                <div class="ops-product-header">
+                    <button class="btn btn-secondary btn-xs" id="opsBackToProducts">&larr; 返回选产品</button>
+                    <span id="opsProductName" class="ops-product-label"></span>
+                </div>
+                <div class="ops-action-bar" id="opsActionBar"></div>
+                <div id="opsActionContent"></div>
             </div>
         </div>
     </div>
@@ -533,11 +512,12 @@
                 <button type="button" class="preset-btn" data-url="https://api.siliconflow.cn/v1" data-model="Qwen/Qwen2.5-72B-Instruct">硅基流动</button>
                 <button type="button" class="preset-btn" data-url="https://api.minimax.chat/v1" data-model="MiniMax-Text-01">MiniMax</button>
                 <button type="button" class="preset-btn" data-url="https://api.moonshot.cn/v1" data-model="moonshot-v1-128k">Moonshot 月之暗面</button>
-                <button type="button" class="preset-btn" data-url="https://api.stepfun.com/v1" data-model="step-1-8k">阶跃星辰 Step</button>
-                <button type="button" class="preset-btn" data-url="https://api.lingyiwanwu.com/v1" data-model="yi-large">零一万物 Yi</button>
-                <button type="button" class="preset-btn" data-url="https://api.sensenova.cn/v1" data-model="SenseNova-5">商汤日日新</button>
                 <button type="button" class="preset-btn" data-url="https://api.baichuan-ai.com/v1" data-model="Baichuan4">百川智能</button>
-                <button type="button" class="preset-btn" data-url="" data-model="" title="清除当前配置">清除</button>
+                <button type="button" class="preset-btn aggregator" data-url="https://openrouter.ai/api/v1" data-model="openai/gpt-4o" title="聚合平台 · 聚合多家模型，一个 Key 访问所有主流大模型">OpenRouter</button>
+                <button type="button" class="preset-btn aggregator" data-url="https://api.n1n.ai/v1" data-model="claude-sonnet-4-6" title="聚合平台 · 支持多种主流模型，兼容 OpenAI 格式">N1N</button>
+                <button type="button" class="preset-btn aggregator" data-url="https://api.lingyaai.cn/v1" data-model="gpt-4o" title="聚合平台 · 纯官方转接口，超高并发，支持所有主流模型" onclick="this.dataset.key='';document.getElementById('apiKey').value='';">灵芽</button>
+                <button type="button" class="preset-btn other-btn" data-url="" data-model="" data-action="other" title="手动填写任意 OpenAI 兼容格式的 API 地址">其他</button>
+                <button type="button" class="preset-btn clear-btn" data-url="" data-model="" title="清除当前配置">清除</button>
             </div>
             <div class="ai-model-warning">
                 <div class="warning-recommend">
@@ -571,6 +551,6 @@
         </div>
     </div>
 </div>
-<script src="app.js?v=19"></script>
+<script src="app.js?v=32"></script>
 </body>
 </html>
